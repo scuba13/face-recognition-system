@@ -22,7 +22,7 @@ Sistema para reconhecimento facial em linhas de produção usando múltiplas câ
 
 1. Clone o repositório:
 ```bash
-git clone https://github.com/seu-usuario/face-recognition-system.git
+git clone https://github.com/scuba13/face-recognition-system.git
 ```
 
 2. Instale as dependências:

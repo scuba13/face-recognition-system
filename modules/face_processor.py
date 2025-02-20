@@ -4,12 +4,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from datetime import datetime
-import shutil
-from config import FACE_RECOGNITION_TOLERANCE, MAX_PROCESSING_WORKERS, FACE_DETECTION_MODEL, MIN_IMAGES_PER_BATCH
-from modules.circuit_breaker import CircuitBreaker
-from modules.backup_handler import BackupHandler
-from modules.image_validator import ImageValidator
 import time
+from config import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +17,6 @@ class FaceProcessor:
         self.known_face_ids = []
         self.running = True
         self.tolerance = FACE_RECOGNITION_TOLERANCE
-        self.backup_handler = BackupHandler()
-        self.image_validator = ImageValidator()
         self._load_known_faces()
 
     def _load_known_faces(self):
@@ -47,44 +41,45 @@ class FaceProcessor:
         
         while self.running:
             try:
-                # Buscar lotes pendentes
-                logger.info("Buscando lotes pendentes...")
-                pending_batches = self.db_handler.get_pending_batches("linha_1")
-                logger.info(f"Encontrados {len(pending_batches)} lotes pendentes")
-                
-                if pending_batches:
-                    for batch in pending_batches:
-                        batch_path = batch['batch_path']
-                        logger.info(f"Iniciando processamento do lote: {batch_path}")
-                        
-                        try:
-                            # Verificar se pasta existe
-                            if not os.path.exists(batch_path):
-                                logger.error(f"Pasta do lote não encontrada: {batch_path}")
-                                continue
+                # Buscar lotes pendentes de todas as linhas configuradas
+                for line_id in PRODUCTION_LINES.keys():
+                    logger.info(f"Buscando lotes pendentes da {line_id}...")
+                    pending_batches = self.db_handler.get_pending_batches(line_id)
+                    logger.info(f"Encontrados {len(pending_batches)} lotes pendentes para {line_id}")
+                    
+                    if pending_batches:
+                        for batch in pending_batches:
+                            batch_path = batch['batch_path']
+                            logger.info(f"Iniciando processamento do lote: {batch_path}")
+                            
+                            try:
+                                # Verificar se pasta existe
+                                if not os.path.exists(batch_path):
+                                    logger.error(f"Pasta do lote não encontrada: {batch_path}")
+                                    continue
+                                    
+                                # Listar imagens no lote
+                                images = [f for f in os.listdir(batch_path) 
+                                        if f.endswith(('.jpg', '.jpeg', '.png'))]
+                                logger.info(f"Encontradas {len(images)} imagens para processar")
                                 
-                            # Listar imagens no lote
-                            images = [f for f in os.listdir(batch_path) 
-                                    if f.endswith(('.jpg', '.jpeg', '.png'))]
-                            logger.info(f"Encontradas {len(images)} imagens para processar")
-                            
-                            # Atualizar status para 'processing'
-                            self.db_handler.update_batch_status(batch_path, 'processing')
-                            
-                            # Processar imagens do lote
-                            self.process_batch(batch_path)
-                            
-                            # Marcar como completo
-                            self.db_handler.update_batch_status(batch_path, 'completed')
-                            logger.info(f"Lote processado com sucesso: {batch_path}")
-                            
-                        except Exception as e:
-                            logger.error(f"Erro ao processar lote {batch_path}: {str(e)}")
-                            self.db_handler.update_batch_status(
-                                batch_path, 
-                                'error',
-                                error_message=str(e)
-                            )
+                                # Atualizar status para 'processing'
+                                self.db_handler.update_batch_status(batch_path, 'processing')
+                                
+                                # Processar imagens do lote
+                                self.process_batch(batch_path)
+                                
+                                # Marcar como completo
+                                self.db_handler.update_batch_status(batch_path, 'completed')
+                                logger.info(f"Lote processado com sucesso: {batch_path}")
+                                
+                            except Exception as e:
+                                logger.error(f"Erro ao processar lote {batch_path}: {str(e)}")
+                                self.db_handler.update_batch_status(
+                                    batch_path, 
+                                    'error',
+                                    error_message=str(e)
+                                )
                 
                 # Aguardar antes de verificar novamente
                 time.sleep(5)

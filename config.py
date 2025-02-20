@@ -8,6 +8,15 @@ PRODUCTION_LINES = {
             "resolution": (1280, 960),
             "fps": 5
         }
+    ],
+    "linha_2": [
+        {
+            "type": "usb",
+            "id": 0,  # Mesma câmera USB
+            "name": "Webcam Principal",
+            "resolution": (1280, 960),
+            "fps": 5
+        }
     ]
 }
 

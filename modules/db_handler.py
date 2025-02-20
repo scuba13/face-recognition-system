@@ -215,21 +215,29 @@ class MongoDBHandler:
                 'batch_path': str,
                 'total_images': int,
                 'processing_time': float,
-                'detections': [
-                    {
-                        'employee_id': str,
-                        'name': str,
-                        'detection_count': int,
-                        'average_confidence': float
-                    }
-                ]
+                'detections': [...]
             }
         """
         try:
-            # Adicionar informações do processador
+            # Extrair informações da data/hora do batch_path
+            # Exemplo: captured_images/linha_1/camera_usb_0/20250220_1519
+            path_parts = batch_data['batch_path'].split('/')
+            line_id = path_parts[1]  # linha_1
+            
+            # Data/hora da captura do lote
+            timestamp_str = path_parts[3]  # 20250220_1519
+            batch_datetime = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
+            
+            # Adicionar campos para relatórios
             batch_data.update({
                 'processor_id': os.getenv('PROCESSOR_ID'),
-                'registered_at': datetime.now()
+                'line_id': line_id,
+                'capture_datetime': batch_datetime,      # Quando as fotos foram tiradas
+                'capture_hour': batch_datetime.hour,     # Hora da captura (0-23)
+                'capture_minute': batch_datetime.minute, # Minuto da captura (0-59)
+                'total_detections': sum(d['detection_count'] for d in batch_data['detections']),
+                'unique_people': len(batch_data['detections']),
+                'processed_at': datetime.now()           # Quando o lote foi processado
             })
             
             # Inserir no banco

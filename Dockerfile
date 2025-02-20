@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar requirements primeiro (para melhor uso do cache)
+# Copiar requirements primeiro
 COPY requirements.txt .
 
 # Instalar dependências Python

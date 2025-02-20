@@ -1,16 +1,13 @@
 # Configuração das linhas de produção
 PRODUCTION_LINES = {
     "linha_1": [
-        {"type": "usb", "id": 0},  # Câmera USB frontal
-        {"type": "usb", "id": 1},  # Câmera USB lateral
-        {"type": "ip", "url": "rtsp://192.168.1.100:554/stream1"},  # Câmera IP fixa
-        {"type": "ip", "url": "http://192.168.1.101:8080/video"}  # Câmera IP móvel (celular)
-    ],
-    "linha_2": [
-        {"type": "usb", "id": 2},  # Câmera USB frontal
-        {"type": "usb", "id": 3},  # Câmera USB lateral
-        {"type": "ip", "url": "rtsp://192.168.1.102:554/stream1"},  # Câmera IP fixa
-        {"type": "ip", "url": "http://192.168.1.103:8080/video"}  # Câmera IP móvel (celular)
+        {
+            "type": "usb",
+            "id": 0,  # Câmera USB detectada
+            "name": "Webcam Principal",
+            "resolution": (1280, 960),
+            "fps": 5
+        }
     ]
 }
 
@@ -19,29 +16,29 @@ CAPTURE_INTERVAL = 5  # intervalo entre capturas em segundos
 DELETE_AFTER_PROCESS = True  # apagar imagens após processamento
 
 # Configurações de MongoDB
-MONGODB_URI = "mongodb://localhost:27017/"  # URI de conexão com o MongoDB
+MONGODB_URI = "mongodb://localhost:27017/"
 MONGODB_TIMEOUT_MS = 5000
 MONGODB_MAX_POOL_SIZE = 100
 MONGODB_RETRY_WRITES = True
 MONGODB_RETRY_READS = True
 
 # Configurações de processamento
-FACE_RECOGNITION_TOLERANCE = 0.6  # Tolerância para reconhecimento facial (menor = mais restritivo)
-BATCH_LOCK_TIMEOUT = 5  # Tempo em minutos para considerar um lock como expirado
+FACE_RECOGNITION_TOLERANCE = 0.6
+BATCH_LOCK_TIMEOUT = 5
 MIN_IMAGES_PER_BATCH = 3
 MAX_PROCESSING_WORKERS = 4
-BATCH_PROCESSING_TIMEOUT = 300  # 5 minutos
-FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU
+BATCH_PROCESSING_TIMEOUT = 300
+FACE_DETECTION_MODEL = "hog"
 
-# Configurações de armazenamento
-BASE_IMAGE_DIR = "/app/captured_images"  # Diretório base para armazenar imagens
+# Configurações de armazenamento (caminhos locais)
+BASE_IMAGE_DIR = "captured_images"  # Pasta local
 BACKUP_FAILED_BATCHES = True
-FAILED_BATCHES_DIR = "/app/failed_batches"
-EMPLOYEES_PHOTOS_DIR = "/app/fotos"  # Novo: diretório para fotos dos funcionários
+FAILED_BATCHES_DIR = "failed_batches"  # Pasta local
+EMPLOYEES_PHOTOS_DIR = "fotos"  # Pasta local
 
 # Configurações de monitoramento
 ENABLE_METRICS = True
-METRICS_INTERVAL = 60  # segundos
+METRICS_INTERVAL = 60
 
 # Configurações de validação de imagem
 MIN_IMAGE_SIZE = 640

@@ -19,91 +19,170 @@ class FaceProcessor:
         self.known_face_encodings = []
         self.known_face_names = []
         self.known_face_ids = []
+        self.running = True
         self.tolerance = FACE_RECOGNITION_TOLERANCE
         self.backup_handler = BackupHandler()
         self.image_validator = ImageValidator()
         self._load_known_faces()
 
     def _load_known_faces(self):
-        """Carrega as faces conhecidas do banco de dados"""
+        """Carrega encodings conhecidos do banco de dados"""
         logger.info("Carregando encodings do banco de dados...")
-        self.known_face_encodings, self.known_face_names, self.known_face_ids = self.db_handler.get_all_encodings()
-        logger.info(f"Carregados {len(self.known_face_names)} encodings")
-
-    @CircuitBreaker(failure_threshold=5, reset_timeout=60)
-    def process_batch(self, batch_folder, production_line):
-        """Processa um lote de imagens e gera um único registro"""
-        # Contadores para métricas
-        metrics = {
-            'total_frames': 0,
-            'faces_detected': 0,
-            'faces_recognized': 0,
-            'processing_time': 0
-        }
-
-        start_time = time.time()
         try:
-            # Usar ThreadPoolExecutor para processar imagens em paralelo
-            with ThreadPoolExecutor(max_workers=MAX_PROCESSING_WORKERS) as executor:
-                image_files = [
-                    f for f in os.listdir(batch_folder) 
-                    if f.endswith(('.jpg', '.jpeg', '.png'))
-                ]
+            encodings, names, ids = self.db_handler.get_all_encodings()
+            self.known_face_encodings = encodings
+            self.known_face_names = names
+            self.known_face_ids = ids
+            logger.info(f"Carregados {len(encodings)} encodings")
+        except Exception as e:
+            logger.error(f"Erro ao carregar encodings: {str(e)}")
+            # Inicializar com listas vazias em caso de erro
+            self.known_face_encodings = []
+            self.known_face_names = []
+            self.known_face_ids = []
+
+    def start_processing(self):
+        """Inicia o processamento de lotes"""
+        logger.info("Iniciando processamento de lotes")
+        
+        while self.running:
+            try:
+                # Buscar lotes pendentes
+                logger.info("Buscando lotes pendentes...")
+                pending_batches = self.db_handler.get_pending_batches("linha_1")
+                logger.info(f"Encontrados {len(pending_batches)} lotes pendentes")
                 
-                if len(image_files) < MIN_IMAGES_PER_BATCH:
-                    raise ValueError(f"Lote com poucas imagens: {len(image_files)}")
+                if pending_batches:
+                    for batch in pending_batches:
+                        batch_path = batch['batch_path']
+                        logger.info(f"Iniciando processamento do lote: {batch_path}")
+                        
+                        try:
+                            # Verificar se pasta existe
+                            if not os.path.exists(batch_path):
+                                logger.error(f"Pasta do lote não encontrada: {batch_path}")
+                                continue
+                                
+                            # Listar imagens no lote
+                            images = [f for f in os.listdir(batch_path) 
+                                    if f.endswith(('.jpg', '.jpeg', '.png'))]
+                            logger.info(f"Encontradas {len(images)} imagens para processar")
+                            
+                            # Atualizar status para 'processing'
+                            self.db_handler.update_batch_status(batch_path, 'processing')
+                            
+                            # Processar imagens do lote
+                            self.process_batch(batch_path)
+                            
+                            # Marcar como completo
+                            self.db_handler.update_batch_status(batch_path, 'completed')
+                            logger.info(f"Lote processado com sucesso: {batch_path}")
+                            
+                        except Exception as e:
+                            logger.error(f"Erro ao processar lote {batch_path}: {str(e)}")
+                            self.db_handler.update_batch_status(
+                                batch_path, 
+                                'error',
+                                error_message=str(e)
+                            )
+                
+                # Aguardar antes de verificar novamente
+                time.sleep(5)
+                
+            except Exception as e:
+                logger.error(f"Erro no loop de processamento: {str(e)}")
+                time.sleep(5)
 
-                futures = []
-                for img in image_files:
-                    img_path = os.path.join(batch_folder, img)
-                    # Validar imagem antes de processar
-                    is_valid, message = self.image_validator.validate_image(img_path)
-                    if is_valid:
-                        futures.append(
-                            executor.submit(self._process_single_image, img_path)
-                        )
-                    else:
-                        logger.warning(f"Imagem inválida {img_path}: {message}")
-
-                results = [f.result() for f in futures]
-
-            # Agregar resultados
-            detections_count = {}
-            total_images = len(image_files)
+    def process_batch(self, batch_path):
+        """Processa um lote de imagens"""
+        if not os.path.exists(batch_path):
+            raise ValueError(f"Pasta do lote não encontrada: {batch_path}")
+        
+        # Dicionário para acumular detecções por pessoa
+        detections = {}  # { employee_id: { 'name': name, 'count': 0, 'confidence_sum': 0 } }
+        total_images = 0
+        start_time = datetime.now()
+        
+        # Processar cada imagem do lote
+        image_files = [f for f in os.listdir(batch_path) 
+                      if f.endswith(('.jpg', '.jpeg', '.png'))]
+        
+        for image_file in image_files:
+            image_path = os.path.join(batch_path, image_file)
+            total_images += 1
             
-            # Preparar dados para registro
-            detections = []
-            for emp_id, data in detections_count.items():
-                avg_confidence = data['confidence_sum'] / data['count']
-                detections.append({
+            try:
+                # Carregar e processar imagem
+                image = face_recognition.load_image_file(image_path)
+                face_locations = face_recognition.face_locations(image)
+                
+                if face_locations:
+                    # Processar cada face encontrada
+                    face_encodings = face_recognition.face_encodings(image, face_locations)
+                    
+                    for face_encoding in face_encodings:
+                        # Comparar com faces conhecidas
+                        matches = face_recognition.compare_faces(
+                            self.known_face_encodings, 
+                            face_encoding,
+                            tolerance=self.tolerance
+                        )
+                        
+                        if True in matches:
+                            # Encontrou match
+                            match_index = matches.index(True)
+                            name = self.known_face_names[match_index]
+                            employee_id = self.known_face_ids[match_index]
+                            
+                            # Calcular confiança
+                            face_distances = face_recognition.face_distance([self.known_face_encodings[match_index]], face_encoding)
+                            confidence = 1 - face_distances[0]
+                            
+                            # Acumular detecção
+                            if employee_id not in detections:
+                                detections[employee_id] = {
+                                    'name': name,
+                                    'count': 0,
+                                    'confidence_sum': 0
+                                }
+                            
+                            detections[employee_id]['count'] += 1
+                            detections[employee_id]['confidence_sum'] += confidence
+            
+            except Exception as e:
+                logger.error(f"Erro ao processar imagem {image_path}: {str(e)}")
+                continue
+        
+        # Preparar resumo do lote
+        batch_summary = {
+            'timestamp': start_time,
+            'batch_path': batch_path,
+            'total_images': total_images,
+            'processing_time': (datetime.now() - start_time).total_seconds(),
+            'detections': [
+                {
                     'employee_id': emp_id,
                     'name': data['name'],
-                    'confidence': avg_confidence,
-                    'detection_count': data['count']
-                })
+                    'detection_count': data['count'],
+                    'average_confidence': data['confidence_sum'] / data['count']
+                }
+                for emp_id, data in detections.items()
+            ]
+        }
+        
+        # Registrar resumo do lote
+        logger.info(f"Resumo do lote {batch_path}:")
+        logger.info(f"Total de imagens: {total_images}")
+        logger.info(f"Pessoas detectadas: {len(detections)}")
+        for det in batch_summary['detections']:
+            logger.info(f"- {det['name']}: {det['detection_count']} detecções (confiança média: {det['average_confidence']:.2f})")
+        
+        # Registrar no banco
+        self.db_handler.register_batch_detection(batch_summary)
 
-            # Registrar lote
-            batch_data = {
-                'timestamp': datetime.now(),
-                'production_line': production_line,
-                'detections': detections,
-                'total_images': total_images,
-                'batch_folder': batch_folder
-            }
-            
-            self.db_handler.register_batch_detection(batch_data)
-            
-            logger.info(f"Lote processado: {len(detections)} funcionários detectados em {total_images} imagens")
-            
-            # Limpar pasta após processamento
-            if os.getenv('DELETE_AFTER_PROCESS', 'True').lower() == 'true':
-                shutil.rmtree(batch_folder)
-                logger.info(f"Pasta removida: {batch_folder}")
-            
-        except Exception as e:
-            logger.error(f"Erro processando lote {batch_folder}: {str(e)}")
-            self.backup_handler.backup_failed_batch(batch_folder, str(e))
-            raise
+    def stop_processing(self):
+        """Para o processamento"""
+        self.running = False
 
     def process_image(self, image_path, production_line):
         """Processa uma única imagem"""

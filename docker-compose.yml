@@ -1,17 +1,7 @@
 version: '3.8'
 
 services:
-  app:
-    build: .
-    volumes:
-      - ./captured_images:/app/captured_images
-      - ./failed_batches:/app/failed_batches
-      - ./fotos:/app/fotos
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/
-    depends_on:
-      - mongodb
-    restart: unless-stopped
+
 
   mongodb:
     image: mongo:latest

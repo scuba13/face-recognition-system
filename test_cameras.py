@@ -1,6 +1,7 @@
 import cv2
 import time
 import logging
+import numpy as np
 from modules.cameras import IPCamera
 
 logging.basicConfig(level=logging.INFO)
@@ -136,28 +137,86 @@ def test_ip_camera(url):
     camera.release()
     cv2.destroyAllWindows()
 
+def test_usb_camera(camera_id, test_duration=5):
+    """Testa uma câmera USB específica de forma detalhada"""
+    print(f"\nTestando câmera USB {camera_id}...")
+    
+    # Tentar abrir a câmera
+    cap = cv2.VideoCapture(camera_id)
+    if not cap.isOpened():
+        print(f"❌ Câmera USB {camera_id} não pôde ser aberta")
+        return False
+        
+    try:
+        # Testar captura de frames
+        frames_captured = 0
+        frames_failed = 0
+        start_time = time.time()
+        
+        while time.time() - start_time < test_duration:
+            ret, frame = cap.read()
+            if ret:
+                frames_captured += 1
+                
+                # Mostrar frame
+                cv2.imshow(f'Camera {camera_id} Test', frame)
+                cv2.waitKey(1)
+                
+                # Análise do frame
+                if frames_captured == 1:
+                    height, width = frame.shape[:2]
+                    print(f"\n✓ Câmera USB {camera_id}:")
+                    print(f"  - Status: Funcionando")
+                    print(f"  - Resolução: {width}x{height}")
+                    print(f"  - FPS: {cap.get(cv2.CAP_PROP_FPS):.1f}")
+                    print(f"  - Brilho: {cap.get(cv2.CAP_PROP_BRIGHTNESS)}")
+                    print(f"  - Contraste: {cap.get(cv2.CAP_PROP_CONTRAST)}")
+                    
+                    # Verificar qualidade da imagem
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    blur = cv2.Laplacian(gray, cv2.CV_64F).var()
+                    print(f"  - Nitidez (Laplacian): {blur:.2f}")
+                    
+                    # Salvar frame de teste
+                    test_file = f"camera_{camera_id}_test.jpg"
+                    cv2.imwrite(test_file, frame)
+                    print(f"  - Frame de teste salvo: {test_file}")
+            else:
+                frames_failed += 1
+            
+            time.sleep(0.1)  # Pequena pausa para não sobrecarregar
+            
+        # Calcular FPS real
+        actual_fps = frames_captured / test_duration
+        print(f"\nResultados do teste ({test_duration}s):")
+        print(f"  - Frames capturados: {frames_captured}")
+        print(f"  - Frames falhos: {frames_failed}")
+        print(f"  - FPS real: {actual_fps:.1f}")
+        
+        return frames_captured > 0
+        
+    except Exception as e:
+        print(f"❌ Erro durante teste: {str(e)}")
+        return False
+        
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
 def main():
-    while True:
-        print("\n=== Menu de Teste de Câmeras ===")
-        print("1. Listar câmeras disponíveis")
-        print("2. Testar câmera USB específica")
-        print("3. Testar câmera IP")
-        print("0. Sair")
-        
-        opcao = input("\nEscolha uma opção: ")
-        
-        if opcao == "1":
-            test_cameras()
-        elif opcao == "2":
-            camera_id = int(input("Digite o ID da câmera USB: "))
-            preview_camera(camera_id)
-        elif opcao == "3":
-            url = input("Digite a URL da câmera IP: ")
-            test_ip_camera(url)
-        elif opcao == "0":
-            break
+    print("\n=== Teste de Câmeras USB ===")
+    
+    # Testar câmeras de 0 a 3
+    for camera_id in range(4):
+        if test_usb_camera(camera_id):
+            print(f"\n✓ Câmera {camera_id} está funcionando")
+            
+            # Perguntar se quer testar mais
+            resp = input(f"\nTestar próxima câmera? (s/n): ")
+            if resp.lower() != 's':
+                break
         else:
-            print("Opção inválida!")
+            print(f"\n❌ Câmera {camera_id} não está disponível")
 
 if __name__ == "__main__":
     main() 

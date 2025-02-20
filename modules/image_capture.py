@@ -11,6 +11,7 @@ from config import (
     MIN_BLUR_THRESHOLD
 )
 from modules.cameras import create_camera
+from modules.image_validator import ImageValidator
 
 logger = logging.getLogger(__name__)
 
@@ -28,78 +29,120 @@ class ImageCapture:
         self.db_handler = db_handler
 
     def start_capture(self):
-        self.running = True
-        for line_id, cameras in self.production_lines.items():
-            for camera_config in cameras:
-                camera_key = f"{line_id}_{camera_config['type']}_{camera_config.get('id', camera_config.get('url'))}"
-                
-                # Criar instância da câmera
-                if camera_config['type'] == 'ip':
-                    camera_config.update(IP_CAMERAS_CONFIG.get(camera_key, IP_CAMERAS_CONFIG['default']))
-                
-                try:
-                    camera = create_camera(camera_config)
-                    self.cameras[camera_key] = camera
-                except Exception as e:
-                    logger.error(f"Erro ao criar câmera {camera_key}: {str(e)}")
-                    continue
-                
-                thread = Thread(
-                    target=self._capture_loop, 
-                    args=(camera_key, line_id, camera_config)
-                )
-                thread.daemon = True
-                thread.start()
-                self.capture_threads.append(thread)
+        """Inicia a captura de imagens"""
+        try:
+            logger.info("Iniciando captura de imagens...")
+            self.running = True
+            
+            for line_id, cameras in self.production_lines.items():
+                for camera_config in cameras:
+                    camera_key = f"{line_id}_{camera_config['type']}_{camera_config.get('id', 0)}"
+                    
+                    try:
+                        camera = create_camera(camera_config)
+                        self.cameras[camera_key] = camera
+                        
+                        thread = Thread(
+                            target=self._capture_loop,
+                            args=(camera_key, line_id, camera_config)
+                        )
+                        thread.daemon = True
+                        thread.start()
+                        self.capture_threads.append(thread)
+                        
+                    except Exception as e:
+                        logger.error(f"Erro ao inicializar câmera {camera_key}: {str(e)}")
+                        continue
+                    
+        except Exception as e:
+            logger.error(f"Erro ao iniciar captura: {str(e)}")
+            self.running = False
 
     def _capture_loop(self, camera_key, line_id, camera_config):
-        camera = self.cameras[camera_key]
-        current_minute = None
-        
-        while self.running:
-            try:
-                current_time = datetime.now()
-                new_minute = current_time.strftime("%H_%M")
-                
-                # Verificar se mudou o minuto
-                if current_minute != new_minute:
-                    # Se tinha um minuto anterior, registrar lote
-                    if current_minute and self.db_handler:
-                        previous_batch = self._get_batch_folder(line_id, current_minute)
-                        self.db_handler.register_new_batch(line_id, previous_batch)
-
-                    current_minute = new_minute
-                    self.current_batch_folders[camera_key] = self._create_batch_directory(
-                        line_id,
-                        camera_config,
-                        current_time
-                    )
-                
-                # Capturar frame
-                ret, frame = camera.read()
-                if ret:
-                    # Verificar qualidade do frame
-                    blur = cv2.Laplacian(frame, cv2.CV_64F).var()
-                    if blur < MIN_BLUR_THRESHOLD:
-                        logger.warning(f"Frame borrado descartado: {blur}")
+        """Loop de captura para uma câmera"""
+        try:
+            logger.info(f"Iniciando captura para câmera {camera_key}")
+            
+            # Inicializar câmera
+            camera = cv2.VideoCapture(camera_config['id'])
+            if not camera.isOpened():
+                logger.error(f"Não foi possível abrir a câmera {camera_key}")
+                return
+            
+            # Configurar câmera
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, camera_config['resolution'][0])
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_config['resolution'][1])
+            camera.set(cv2.CAP_PROP_FPS, camera_config['fps'])
+            
+            current_minute = None
+            frames_in_batch = 0
+            batch_dir = None
+            
+            while self.running:
+                try:
+                    now = datetime.now()
+                    minute_key = now.strftime("%Y%m%d_%H%M")
+                    
+                    # Verificar se começou novo minuto
+                    if minute_key != current_minute:
+                        # Se tinha um lote anterior, registrar no banco
+                        if current_minute and batch_dir:
+                            self.db_handler.register_new_batch(
+                                line_id=line_id,
+                                batch_path=batch_dir
+                            )
+                            logger.info(f"Lote {current_minute} registrado no banco")
+                        
+                        current_minute = minute_key
+                        frames_in_batch = 0
+                        
+                        # Criar novo diretório para o lote
+                        batch_dir = os.path.join(
+                            BASE_IMAGE_DIR,
+                            line_id,
+                            f"camera_{camera_config['type']}_{camera_config['id']}",
+                            minute_key
+                        )
+                        os.makedirs(batch_dir, exist_ok=True)
+                        logger.info(f"Novo lote iniciado: {batch_dir}")
+                    
+                    # Capturar frame
+                    ret, frame = camera.read()
+                    if not ret:
+                        logger.error(f"Erro ao capturar frame da câmera {camera_key}")
+                        time.sleep(1)
                         continue
-                    filename = f"frame_{current_time.strftime('%H_%M_%S')}.jpg"
-                    filepath = os.path.join(self.current_batch_folders[camera_key], filename)
+                    
+                    # Salvar frame
+                    filename = f"frame_{now.strftime('%H%M%S')}.jpg"
+                    filepath = os.path.join(batch_dir, filename)
                     cv2.imwrite(filepath, frame)
-                    logger.info(f"Imagem capturada: {filepath}")
+                    
+                    frames_in_batch += 1
+                    logger.info(f"Frame {frames_in_batch}/12 capturado para o lote {current_minute}")
+                    
+                    # Se completou 12 frames, registrar lote
+                    if frames_in_batch >= 12:
+                        self.db_handler.register_new_batch(
+                            line_id=line_id,
+                            batch_path=batch_dir
+                        )
+                        logger.info(f"Lote {current_minute} completo e registrado no banco")
+                    
+                    # Esperar intervalo
+                    time.sleep(self.interval)
+                    
+                except Exception as e:
+                    logger.error(f"Erro no loop de captura: {str(e)}")
+                    time.sleep(1)
                 
-                time.sleep(self.interval)
-
-            except Exception as e:
-                logger.error(f"Erro na captura da câmera {camera_key}: {str(e)}")
-                # Tentar reconectar câmera IP
-                if camera_config['type'] == 'ip':
-                    try:
-                        camera.open()
-                    except:
-                        pass
-
-            camera.release()
+        except Exception as e:
+            logger.error(f"Erro fatal no loop de captura: {str(e)}")
+        
+        finally:
+            if 'camera' in locals():
+                camera.release()
+            logger.info(f"Captura finalizada para câmera {camera_key}")
 
     def _create_batch_directory(self, line_id, camera_config, timestamp):
         base_dir = BASE_IMAGE_DIR

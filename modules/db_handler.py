@@ -1,5 +1,5 @@
-from pymongo import MongoClient, ReturnDocument
-from pymongo.errors import PyMongoError
+from pymongo import MongoClient, ReturnDocument, ASCENDING
+from pymongo.errors import PyMongoError, ConnectionFailure, ServerSelectionTimeoutError
 import backoff
 import logging
 import numpy as np
@@ -9,33 +9,122 @@ from config import (
     MONGODB_URI, BATCH_LOCK_TIMEOUT, MONGODB_TIMEOUT_MS,
     MONGODB_MAX_POOL_SIZE, MONGODB_RETRY_WRITES
 )
+import time
 
 logger = logging.getLogger(__name__)
 
 class MongoDBHandler:
-    def __init__(self, connection_string=MONGODB_URI):
-        self.client = MongoClient(
-            connection_string,
-            serverSelectionTimeoutMS=MONGODB_TIMEOUT_MS,
-            maxPoolSize=MONGODB_MAX_POOL_SIZE,
-            retryWrites=MONGODB_RETRY_WRITES
-        )
-        self.db = self.client.face_recognition_db
-        self._setup_collections()
+    def __init__(self, connection_string, max_retries=5, retry_interval=5):
+        self.connection_string = connection_string
+        self.max_retries = max_retries
+        self.retry_interval = retry_interval
+        self.client = None
+        self.db = None
+        
+        # Tentar conectar com retry
+        self._connect_with_retry()
+        
+    def _connect_with_retry(self):
+        """Tenta conectar ao MongoDB com retry"""
+        for attempt in range(self.max_retries):
+            try:
+                self.client = MongoClient(self.connection_string)
+                # Testar conexão
+                self.client.admin.command('ping')
+                self.db = self.client.face_recognition_db
+                self._setup_collections()
+                logger.info("Conexão com MongoDB estabelecida com sucesso")
+                return
+            except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"Tentativa {attempt + 1} falhou. Tentando novamente em {self.retry_interval}s...")
+                    time.sleep(self.retry_interval)
+                else:
+                    logger.error("Não foi possível conectar ao MongoDB após todas as tentativas")
+                    raise
 
     def _setup_collections(self):
         """Configura coleções e índices"""
         # Configurar coleções
-        self.detections = self.db.detections
-        self.employees = self.db.employees
-        self.batch_control = self.db.batch_control
-        self.metrics = self.db.metrics
+        self.detections = self.db.detections      # Detecções de faces
+        self.employees = self.db.employees        # Cadastro de funcionários
+        self.batch_control = self.db.batch_control # Controle de lotes de imagens
+        self.metrics = self.db.metrics            # Métricas do sistema
 
         # Criar índices
         self._create_indexes()
 
     def _create_indexes(self):
-        """Cria índices necessários"""
+        """
+        Estrutura das coleções e seus índices:
+        
+        1. employees (Funcionários):
+        {
+            "_id": ObjectId,
+            "employee_id": str,          # ID único do funcionário
+            "name": str,                 # Nome completo
+            "department": str,           # Departamento (novo campo)
+            "position": str,             # Cargo (novo campo)
+            "encoding": list,            # Encoding facial
+            "photo_path": str,           # Caminho da foto
+            "active": bool,              # Status
+            "created_at": datetime,
+            "updated_at": datetime
+        }
+        Índices:
+        - employee_id (único)
+        - name
+        - department
+        - position
+        
+        2. detections (Detecções):
+        {
+            "_id": ObjectId,
+            "employee_id": str,          # ID do funcionário detectado
+            "timestamp": datetime,       # Data/hora da detecção
+            "production_line": str,      # ID da linha de produção
+            "camera_id": str,            # ID da câmera
+            "confidence": float,         # Confiança da detecção
+            "image_path": str,           # Caminho da imagem
+            "batch_id": ObjectId         # ID do lote de processamento
+        }
+        Índices:
+        - timestamp
+        - (production_line, timestamp)
+        - employee_id
+        
+        3. batch_control (Controle de Lotes):
+        {
+            "_id": ObjectId,
+            "line_id": str,             # ID da linha de produção
+            "batch_path": str,           # Caminho do diretório do lote
+            "status": str,              # Status: new, processing, completed, failed
+            "created_at": datetime,      # Data de criação do lote
+            "processed_at": datetime,    # Data de processamento
+            "processor_id": str,         # ID do processador
+            "total_images": int,         # Total de imagens no lote
+            "processed_images": int,     # Imagens processadas
+            "failed_images": int         # Imagens com falha
+        }
+        Índices:
+        - (line_id, status)
+        - batch_path (único)
+        - created_at
+        - processor_id
+        
+        4. metrics (Métricas):
+        {
+            "_id": ObjectId,
+            "timestamp": datetime,       # Data/hora da métrica
+            "type": str,                # Tipo de métrica
+            "value": float,             # Valor da métrica
+            "production_line": str,      # ID da linha (opcional)
+            "camera_id": str,           # ID da câmera (opcional)
+            "processor_id": str          # ID do processador
+        }
+        Índices:
+        - timestamp
+        """
         # Índices para detections
         self.detections.create_index([("timestamp", 1)])
         self.detections.create_index([("production_line", 1), ("timestamp", 1)])
@@ -44,6 +133,8 @@ class MongoDBHandler:
         # Índices para employees
         self.employees.create_index([("employee_id", 1)], unique=True)
         self.employees.create_index([("name", 1)])
+        self.employees.create_index([("department", 1)])
+        self.employees.create_index([("position", 1)])
 
         # Índices para batch_control
         self.batch_control.create_index([("line_id", 1), ("status", 1)])
@@ -95,51 +186,57 @@ class MongoDBHandler:
             raise
 
     def get_all_encodings(self):
-        """Recupera todos os encodings dos funcionários"""
+        """Retorna todos os encodings conhecidos"""
         try:
-            employees = list(self.employees.find())
-            encodings = []
-            names = []
-            for emp in employees:
-                encodings.append(np.array(emp['face_encoding']))
-                names.append(emp['name'])
-            return encodings, names
+            employees = list(self.employees.find({"encoding": {"$exists": True}}))
+            
+            if not employees:
+                logger.info("Nenhum encoding encontrado no banco")
+                return [], [], []  # Retornar 3 listas vazias
+            
+            # Extrair dados
+            encodings = [np.array(emp["encoding"]) for emp in employees]
+            names = [emp["name"] for emp in employees]
+            ids = [str(emp["_id"]) for emp in employees]
+            
+            logger.info(f"Carregados {len(encodings)} encodings do banco")
+            return encodings, names, ids
+            
         except Exception as e:
-            logger.error(f"Erro ao recuperar encodings: {str(e)}")
-            raise
+            logger.error(f"Erro ao carregar encodings: {str(e)}")
+            return [], [], []  # Em caso de erro, retornar listas vazias
 
     def register_batch_detection(self, batch_data):
         """
-        Registra detecções em lote (um registro por minuto)
+        Registra detecções em lote
         Args:
             batch_data: {
                 'timestamp': datetime,
-                'production_line': str,
+                'batch_path': str,
+                'total_images': int,
+                'processing_time': float,
                 'detections': [
                     {
                         'employee_id': str,
                         'name': str,
-                        'confidence': float,
-                        'detection_count': int
+                        'detection_count': int,
+                        'average_confidence': float
                     }
-                ],
-                'total_images': int,
-                'batch_folder': str
+                ]
             }
         """
         try:
+            # Adicionar informações do processador
             batch_data.update({
                 'processor_id': os.getenv('PROCESSOR_ID'),
-                'processing_metrics': {
-                    'total_frames': batch_data['total_images'],
-                    'faces_detected': sum(d['detection_count'] for d in batch_data['detections']),
-                    'processing_time': datetime.now() - batch_data['timestamp']
-                },
-                'camera_info': self.cameras[batch_data['camera_id']].get_info()
+                'registered_at': datetime.now()
             })
+            
+            # Inserir no banco
             result = self.detections.insert_one(batch_data)
             logger.info(f"Lote registrado com ID: {result.inserted_id}")
             return result.inserted_id
+            
         except Exception as e:
             logger.error(f"Erro ao registrar lote: {str(e)}")
             raise
@@ -147,22 +244,23 @@ class MongoDBHandler:
     def get_pending_batches(self, line_id):
         """Recupera lotes pendentes para uma linha"""
         try:
-            # Usa findAndModify para garantir exclusividade
-            batch = self.batch_control.find_one_and_update(
-                {
-                    'line_id': line_id,
-                    'status': 'pending',
-                    'lock_timestamp': {'$lt': datetime.now() - timedelta(minutes=BATCH_LOCK_TIMEOUT)}
-                },
-                {
-                    '$set': {
-                        'lock_timestamp': datetime.now(),
-                        'processor_id': os.getenv('PROCESSOR_ID', 'default')
-                    }
-                },
-                sort=[('created_at', 1)]
-            )
-            return [batch] if batch else []
+            # Adicionar logs para debug
+            logger.info(f"Buscando lotes pendentes na coleção batch_control para linha {line_id}")
+            
+            # Buscar todos os lotes pendentes (sem o findAndModify por enquanto)
+            query = {
+                'line_id': line_id,
+                'status': 'pending'
+            }
+            
+            # Listar todos os lotes encontrados
+            all_batches = list(self.batch_control.find(query))
+            logger.info(f"Total de lotes encontrados: {len(all_batches)}")
+            for batch in all_batches:
+                logger.info(f"Lote encontrado: {batch['batch_path']} - Status: {batch['status']}")
+            
+            return all_batches
+            
         except Exception as e:
             logger.error(f"Erro ao obter lotes pendentes: {str(e)}")
             return []

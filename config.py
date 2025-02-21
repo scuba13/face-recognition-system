@@ -3,19 +3,38 @@ PRODUCTION_LINES = {
     "linha_1": [
         {
             "type": "usb",
-            "id": 0,  # Câmera USB detectada
+            "id": 0,  # Primeira câmera USB
             "name": "Webcam Principal",
             "resolution": (1280, 960),
-            "fps": 5
-        }
-    ],
-    "linha_2": [
+            "fps": 5,
+            "position": "entrada"
+        },
         {
             "type": "usb",
-            "id": 0,  # Mesma câmera USB
+            "id": 1,  # Segunda câmera USB
+            "name": "Webcam Secundária",
+            "resolution": (1280, 960),
+            "fps": 5,
+            "position": "saida"
+        }
+    ],
+    # Linha 2 comentada para testes
+    "linha_2": [
+        {
+            "type": "usb", 
+            "id": 0,
             "name": "Webcam Principal",
             "resolution": (1280, 960),
-            "fps": 5
+            "fps": 5,
+            "position": "entrada"
+        },
+        {
+            "type": "usb",
+            "id": 1,  # Segunda câmera USB
+            "name": "Webcam Secundária",
+            "resolution": (1280, 960),
+            "fps": 5,
+            "position": "saida"
         }
     ]
 }
@@ -39,50 +58,33 @@ MAX_PROCESSING_WORKERS = 4
 BATCH_PROCESSING_TIMEOUT = 300
 FACE_DETECTION_MODEL = "hog"
 
-# Configurações de armazenamento (caminhos locais)
-BASE_IMAGE_DIR = "captured_images"  # Pasta local
+# Configurações de armazenamento
+BASE_IMAGE_DIR = "captured_images"
 BACKUP_FAILED_BATCHES = True
-FAILED_BATCHES_DIR = "failed_batches"  # Pasta local
-EMPLOYEES_PHOTOS_DIR = "fotos"  # Pasta local
+FAILED_BATCHES_DIR = "failed_batches"
+EMPLOYEES_PHOTOS_DIR = "fotos"
 
 # Configurações de monitoramento
 ENABLE_METRICS = True
 METRICS_INTERVAL = 60
 
 # Configurações de validação de imagem
-MIN_IMAGE_SIZE = 640
-MAX_IMAGE_SIZE = 4096
-MIN_BLUR_THRESHOLD = 100
+MIN_IMAGE_SIZE = 640    # Tamanho mínimo em pixels
+MAX_IMAGE_SIZE = 4096   # Tamanho máximo em pixels
+MIN_BLUR_THRESHOLD = 100  # Valor mínimo do Laplaciano para considerar imagem nítida
 
 # Configurações de circuit breaker
 CB_FAILURE_THRESHOLD = 5
 CB_RESET_TIMEOUT = 60
 
-# Configurações de câmeras IP
+# Configurações de câmeras IP (mantidas para referência futura)
 IP_CAMERAS_CONFIG = {
-    "retry_interval": 5,  # segundos entre tentativas de reconexão
-    "connection_timeout": 10,  # timeout para conexão
+    "retry_interval": 5,
+    "connection_timeout": 10,
     "auth": {
         "default": {
             "username": "admin",
             "password": "admin123"
-        },
-        # Configurações específicas por câmera
-        "linha_1_camera_ip_1": {
-            "username": "admin",
-            "password": "senha123"
-        },
-        "linha_1_camera_ip_2": {
-            "username": "admin",
-            "password": "senha456"
-        },
-        "linha_2_camera_ip_1": {
-            "username": "admin",
-            "password": "senha789"
-        },
-        "linha_2_camera_ip_2": {
-            "username": "admin",
-            "password": "senha012"
         }
     }
 } 

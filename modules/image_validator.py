@@ -1,6 +1,7 @@
 import cv2
 import logging
 import os
+import numpy as np
 from config import MIN_IMAGE_SIZE, MAX_IMAGE_SIZE, MIN_BLUR_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -48,4 +49,42 @@ class ImageValidator:
             
         except Exception as e:
             logger.error(f"Erro ao validar imagem {image_path}: {str(e)}")
-            return False, f"Erro na validação: {str(e)}" 
+            return False, f"Erro na validação: {str(e)}"
+
+    def is_valid(self, image):
+        """
+        Valida se a imagem tem qualidade suficiente
+        Retorna True se a imagem passar em todas as validações
+        """
+        try:
+            # Verificar dimensões
+            height, width = image.shape[:2]
+            if width < self.min_size or height < self.min_size:
+                return False
+            if width > self.max_size or height > self.max_size:
+                return False
+
+            # Verificar se não está muito borrada
+            if not self._check_blur(image):
+                return False
+
+            # Verificar se tem contraste suficiente
+            if not self._check_contrast(image):
+                return False
+
+            return True
+
+        except Exception as e:
+            return False
+
+    def _check_blur(self, image):
+        """Verifica se a imagem não está muito borrada"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        blur_value = cv2.Laplacian(gray, cv2.CV_64F).var()
+        return blur_value > self.blur_threshold
+
+    def _check_contrast(self, image):
+        """Verifica se a imagem tem contraste suficiente"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        std_dev = np.std(gray)
+        return std_dev > 30  # Valor arbitrário para contraste mínimo 

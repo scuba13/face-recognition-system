@@ -21,9 +21,10 @@ class ImageCapture:
         self.interval = interval
         self.running = False
         self.capture_threads = []
-        self.current_batch_folders = {}  # {camera_key: current_folder}
+        self.current_minute = None
         self.cameras = {}  # {camera_key: camera_instance}
         self.db_handler = None
+        self.monitor_thread = None
 
     def set_db_handler(self, db_handler):
         self.db_handler = db_handler
@@ -34,26 +35,29 @@ class ImageCapture:
             logger.info("Iniciando captura de imagens...")
             self.running = True
             
+            # Iniciar thread de monitoramento
+            self.monitor_thread = Thread(target=self._monitor_batches)
+            self.monitor_thread.daemon = True
+            self.monitor_thread.start()
+            
+            # Iniciar threads de captura
             for line_id, cameras in self.production_lines.items():
                 for camera_config in cameras:
                     camera_key = f"{line_id}_{camera_config['type']}_{camera_config.get('id', 0)}"
-                    
                     try:
-                        camera = create_camera(camera_config)
-                        self.cameras[camera_key] = camera
-                        
-                        thread = Thread(
-                            target=self._capture_loop,
-                            args=(camera_key, line_id, camera_config)
-                        )
-                        thread.daemon = True
-                        thread.start()
-                        self.capture_threads.append(thread)
-                        
+                        camera = cv2.VideoCapture(camera_config['id'])
+                        if camera.isOpened():
+                            self.cameras[camera_key] = camera
+                            thread = Thread(
+                                target=self._capture_loop,
+                                args=(camera_key, line_id, camera_config)
+                            )
+                            thread.daemon = True
+                            thread.start()
+                            self.capture_threads.append(thread)
                     except Exception as e:
                         logger.error(f"Erro ao inicializar câmera {camera_key}: {str(e)}")
-                        continue
-                    
+                        
         except Exception as e:
             logger.error(f"Erro ao iniciar captura: {str(e)}")
             self.running = False
@@ -75,7 +79,6 @@ class ImageCapture:
             camera.set(cv2.CAP_PROP_FPS, camera_config['fps'])
             
             current_minute = None
-            frames_in_batch = 0
             batch_dir = None
             
             while self.running:
@@ -85,26 +88,16 @@ class ImageCapture:
                     
                     # Verificar se começou novo minuto
                     if minute_key != current_minute:
-                        # Se tinha um lote anterior, registrar no banco
-                        if current_minute and batch_dir:
-                            self.db_handler.register_new_batch(
-                                line_id=line_id,
-                                batch_path=batch_dir
-                            )
-                            logger.info(f"Lote {current_minute} registrado no banco")
-                        
                         current_minute = minute_key
-                        frames_in_batch = 0
                         
-                        # Criar novo diretório para o lote
+                        # Criar diretório do lote (apenas linha/minuto)
                         batch_dir = os.path.join(
                             BASE_IMAGE_DIR,
                             line_id,
-                            f"camera_{camera_config['type']}_{camera_config['id']}",
                             minute_key
                         )
                         os.makedirs(batch_dir, exist_ok=True)
-                        logger.info(f"Novo lote iniciado: {batch_dir}")
+                        logger.info(f"Novo lote iniciado: {line_id} - {minute_key}")
                     
                     # Capturar frame
                     ret, frame = camera.read()
@@ -113,22 +106,12 @@ class ImageCapture:
                         time.sleep(1)
                         continue
                     
-                    # Salvar frame
-                    filename = f"frame_{now.strftime('%H%M%S')}.jpg"
+                    # Salvar frame com posição no nome
+                    position = camera_config.get('position', 'default')
+                    filename = f"{position}_frame_{now.strftime('%H%M%S')}.jpg"
                     filepath = os.path.join(batch_dir, filename)
                     cv2.imwrite(filepath, frame)
-                    
-                    frames_in_batch += 1
-                    logger.info(f"Frame {frames_in_batch}/12 capturado para o lote {current_minute}")
-                    
-                    # Se completou 12 frames, registrar lote
-                    if frames_in_batch >= 12:
-                        self.db_handler.register_new_batch(
-                            line_id=line_id,
-                            batch_path=batch_dir
-                        )
-                        logger.info(f"Lote {current_minute} completo e registrado no banco")
-                    
+
                     # Esperar intervalo
                     time.sleep(self.interval)
                     
@@ -192,3 +175,33 @@ class ImageCapture:
                     'last_check': datetime.now().isoformat()
                 }
         return status 
+
+    def _monitor_batches(self):
+        """Monitora e registra lotes completos"""
+        last_registered_minute = None
+        
+        while self.running:
+            try:
+                current_minute = datetime.now().strftime("%Y%m%d_%H%M")
+                
+                # Se mudou o minuto, registrar lotes do minuto anterior
+                if current_minute != last_registered_minute and last_registered_minute:
+                    for line_id in self.production_lines.keys():
+                        batch_path = os.path.join(BASE_IMAGE_DIR, line_id, last_registered_minute)
+                        
+                        # Verificar se diretório existe e tem imagens
+                        if os.path.exists(batch_path):
+                            images = [f for f in os.listdir(batch_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
+                            if images:
+                                self.db_handler.register_new_batch(
+                                    line_id=line_id,
+                                    batch_path=batch_path
+                                )
+                                logger.info(f"Lote registrado: {line_id} - {last_registered_minute} - {len(images)} imagens")
+                
+                last_registered_minute = current_minute
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Erro no monitor de lotes: {str(e)}")
+                time.sleep(5) 

@@ -3,6 +3,33 @@ import time
 import os
 from datetime import datetime
 
+def test_camera():
+    print("Iniciando teste da câmera...")
+    
+    # Tentar diferentes índices de câmera
+    for camera_id in [0, 1]:
+        print(f"\nTestando câmera {camera_id}")
+        cap = cv2.VideoCapture(camera_id)
+        
+        if not cap.isOpened():
+            print(f"Não foi possível abrir câmera {camera_id}")
+            continue
+            
+        # Tentar algumas capturas
+        for i in range(5):
+            ret, frame = cap.read()
+            if ret:
+                print(f"Frame {i+1} capturado com sucesso - Shape: {frame.shape}")
+                # Salvar frame para verificar
+                cv2.imwrite(f"test_frame_{camera_id}_{i}.jpg", frame)
+            else:
+                print(f"Falha ao capturar frame {i+1}")
+            time.sleep(1)
+            
+        cap.release()
+        
+    print("\nTeste finalizado")
+
 def simple_camera_test():
     print("Iniciando teste simples da câmera 0...")
     
@@ -59,4 +86,5 @@ def simple_camera_test():
         print("\nTeste finalizado")
 
 if __name__ == "__main__":
+    test_camera()
     simple_camera_test() 

@@ -10,6 +10,8 @@ from config import (
     MONGODB_MAX_POOL_SIZE, MONGODB_RETRY_WRITES
 )
 import time
+from typing import Dict
+import face_recognition
 
 logger = logging.getLogger(__name__)
 
@@ -206,68 +208,26 @@ class MongoDBHandler:
             logger.error(f"Erro ao carregar encodings: {str(e)}")
             return [], [], []  # Em caso de erro, retornar listas vazias
 
-    def register_batch_detection(self, batch_data):
-        """
-        Registra detecções em lote
-        Args:
-            batch_data: {
-                'timestamp': datetime,
-                'batch_path': str,
-                'total_images': int,
-                'processing_time': float,
-                'detections': [...]
-            }
-        """
+    def register_batch_detection(self, batch_data: Dict) -> None:
+        """Registra detecções de um lote"""
         try:
-            # Extrair informações da data/hora do batch_path
-            # Exemplo: captured_images/linha_1/camera_usb_0/20250220_1519
-            path_parts = batch_data['batch_path'].split('/')
-            line_id = path_parts[1]  # linha_1
-            
-            # Data/hora da captura do lote
-            timestamp_str = path_parts[3]  # 20250220_1519
-            batch_datetime = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
-            
-            # Adicionar campos para relatórios
-            batch_data.update({
-                'processor_id': os.getenv('PROCESSOR_ID'),
-                'line_id': line_id,
-                'capture_datetime': batch_datetime,      # Quando as fotos foram tiradas
-                'capture_hour': batch_datetime.hour,     # Hora da captura (0-23)
-                'capture_minute': batch_datetime.minute, # Minuto da captura (0-59)
-                'total_detections': sum(d['detection_count'] for d in batch_data['detections']),
-                'unique_people': len(batch_data['detections']),
-                'processed_at': datetime.now()           # Quando o lote foi processado
-            })
-            
-            # Inserir no banco
+            # Registrar exatamente os campos recebidos, sem adicionar campos extras
             result = self.detections.insert_one(batch_data)
-            logger.info(f"Lote registrado com ID: {result.inserted_id}")
-            return result.inserted_id
+            logger.info(f"Detecções do lote registradas com ID: {result.inserted_id}")
             
         except Exception as e:
-            logger.error(f"Erro ao registrar lote: {str(e)}")
+            logger.error(f"Erro ao registrar detecções do lote: {str(e)}")
             raise
 
     def get_pending_batches(self, line_id):
         """Recupera lotes pendentes para uma linha"""
         try:
-            # Adicionar logs para debug
-            logger.info(f"Buscando lotes pendentes na coleção batch_control para linha {line_id}")
-            
-            # Buscar todos os lotes pendentes (sem o findAndModify por enquanto)
             query = {
                 'line_id': line_id,
                 'status': 'pending'
             }
             
-            # Listar todos os lotes encontrados
-            all_batches = list(self.batch_control.find(query))
-            logger.info(f"Total de lotes encontrados: {len(all_batches)}")
-            for batch in all_batches:
-                logger.info(f"Lote encontrado: {batch['batch_path']} - Status: {batch['status']}")
-            
-            return all_batches
+            return list(self.batch_control.find(query))
             
         except Exception as e:
             logger.error(f"Erro ao obter lotes pendentes: {str(e)}")
@@ -349,4 +309,60 @@ class MongoDBHandler:
         try:
             self.metrics.insert_one(metrics)
         except Exception as e:
-            logger.error(f"Erro ao salvar métricas: {str(e)}") 
+            logger.error(f"Erro ao salvar métricas: {str(e)}")
+
+    def get_encodings_chunk(self, skip=0, limit=100):
+        """Retorna chunk de encodings"""
+        try:
+            employees = list(self.employees
+                           .find({"encoding": {"$exists": True}})
+                           .skip(skip)
+                           .limit(limit))
+            
+            if not employees:
+                return [], [], []
+            
+            encodings = [np.array(emp["encoding"]) for emp in employees]
+            names = [emp["name"] for emp in employees]
+            ids = [str(emp["_id"]) for emp in employees]
+            
+            return encodings, names, ids
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar chunk de encodings: {str(e)}")
+            return [], [], []
+            
+    def count_total_encodings(self):
+        """Retorna total de encodings cadastrados"""
+        return self.employees.count_documents({"encoding": {"$exists": True}})
+
+    def find_matching_face(self, face_encoding, tolerance=0.6):
+        """
+        Busca face mais próxima no banco de dados
+        Retorna None se não encontrar match dentro da tolerância
+        """
+        try:
+            # Buscar todos os funcionários com encoding
+            employees = self.employees.find({"encoding": {"$exists": True}})
+            
+            best_match = None
+            min_distance = float('inf')
+            
+            # Comparar com cada funcionário
+            for emp in employees:
+                stored_encoding = np.array(emp["encoding"])
+                distance = face_recognition.face_distance([stored_encoding], face_encoding)[0]
+                
+                if distance < min_distance and distance <= tolerance:
+                    min_distance = distance
+                    best_match = {
+                        'employee_id': str(emp["_id"]),
+                        'name': emp["name"],
+                        'confidence': 1 - distance
+                    }
+            
+            return best_match
+            
+        except Exception as e:
+            logger.error(f"Erro ao buscar face no banco: {str(e)}")
+            return None 

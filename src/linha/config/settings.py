@@ -14,14 +14,32 @@ PRODUCTION_LINES = {
             "fps": 5,
             "position": "entrada"
         },
-        # {
-        #     "type": "usb",
-        #     "id": 1,
-        #     "name": "Webcam Secundária",
-        #     "resolution": (1280, 960),
-        #     "fps": 5,
-        #     "position": "saida"
-        # }
+        {
+            "type": "usb",
+            "id": 1,
+            "name": "Webcam Secundária",
+            "resolution": (1280, 720),
+            "fps": 30,
+            "position": "saida"
+        }
+    ],
+    "linha_2": [
+        {
+            "type": "usb",
+            "id": 0,
+            "name": "Webcam Principal",
+            "resolution": (1280, 960),
+            "fps": 5,
+            "position": "entrada"
+        },
+        {
+            "type": "usb",
+            "id": 1,
+            "name": "Webcam Secundária",
+            "resolution": (1280, 720),
+            "fps": 5,
+            "position": "saida"
+        }
     ]
 }
 

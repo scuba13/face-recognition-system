@@ -7,6 +7,7 @@ import time
 from threading import Thread
 from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES
 from linha.db.models import BatchDetection  # Importar o modelo
+import shutil  # Adicionar import
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,10 @@ class FaceProcessor:
     def process_batch(self, batch):
         """Processa um lote de imagens"""
         batch_path = batch['batch_path']
-        line_id = batch_path.split('/')[1]
+        
+        # Corrigir extração do line_id
+        # Antes: line_id = batch_path.split('/')[1]  # Pegava 'Users' do path
+        line_id = batch_path.split('captured_images/')[1].split('/')[0]  # Pega 'linha_1' ou 'linha_2'
         
         try:
             self.db_handler.update_batch_status(batch_path, 'processing')
@@ -94,9 +98,9 @@ class FaceProcessor:
             timestamp_str = batch_path.split('/')[-1]
             capture_datetime = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
 
-            # Criar objeto BatchDetection ao invés de dict
+            # Criar objeto BatchDetection
             batch_detection = BatchDetection(
-                line_id=line_id,
+                line_id=line_id,  # Agora terá o valor correto (linha_1, linha_2, etc)
                 batch_path=batch_path,
                 timestamp=datetime.now(),
                 capture_datetime=capture_datetime,
@@ -127,6 +131,13 @@ class FaceProcessor:
             logger.info(f"- Total de imagens: {total_images}")
             logger.info(f"- Faces detectadas: {total_faces_detected}")
             logger.info(f"- Faces reconhecidas: {batch_detection.total_faces_recognized}")
+            
+            # Remover diretório do lote após processamento
+            try:
+                shutil.rmtree(batch_path)
+                logger.info(f"✨ Lote removido: {batch_path}")
+            except Exception as e:
+                logger.warning(f"Não foi possível remover o lote {batch_path}: {str(e)}")
             
         except Exception as e:
             logger.error(f"Erro ao processar lote {batch_path}: {str(e)}")

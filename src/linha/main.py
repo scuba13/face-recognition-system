@@ -11,12 +11,10 @@ from linha.config.settings import (
     PRODUCTION_LINES,
     CAPTURE_INTERVAL
 )
+from linha.utils.logger import setup_colored_logging
 
-# Configuração do logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configurar logging colorido
+setup_colored_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 def main():

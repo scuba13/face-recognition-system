@@ -5,6 +5,7 @@ import pandas as pd
 import logging
 from linha.frontend.api_client import APIClient
 import time
+from linha.config.settings import CAPTURE_INTERVAL
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,15 @@ def render_monitoring_page(api_client):
                 else:
                     cols[3].write("🕒 Aguardando...")
                 
-                cols[4].markdown("**FPS**")
-                cols[4].metric("", f"{camera.get('fps', 0):.1f}")
+                cols[4].markdown("**Taxa de Captura**")
+                fps = camera.get('fps', 0)
+                # Converter FPS para imagens por minuto (60 segundos / intervalo)
+                images_per_minute = 60 / CAPTURE_INTERVAL if CAPTURE_INTERVAL > 0 else 0
+                cols[4].metric(
+                    "", 
+                    f"{images_per_minute:.1f} img/min",
+                    help=f"Intervalo entre capturas: {CAPTURE_INTERVAL}s"
+                )
     
     # Tab Processamento
     with tab2:

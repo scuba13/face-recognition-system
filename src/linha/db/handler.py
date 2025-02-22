@@ -21,10 +21,6 @@ class MongoDBHandler:
         self.db = self.client[MONGODB_DB]
         self._setup_collections()
         
-        # Gerar ID único para este processador
-        self.processor_id = str(uuid.uuid4())
-        logger.info(f"ID do processador: {self.processor_id}")
-        
         # Criar instância do CRUD de funcionários
         self.employee_crud = EmployeeCRUD(self)
         
@@ -72,7 +68,6 @@ class MongoDBHandler:
                 'processor_id': None  # Apenas lotes não atribuídos
             }
             
-            # Adicionar line_id ao query se fornecido
             if line_id:
                 query['line_id'] = line_id
                 
@@ -81,16 +76,20 @@ class MongoDBHandler:
             
             # Atualizar processor_id dos lotes encontrados
             if batches:
-                batch_paths = [b['batch_path'] for b in batches]
-                self.batch_control.update_many(
-                    {'batch_path': {'$in': batch_paths}},
-                    {
-                        '$set': {
-                            'processor_id': self.processor_id,
-                            'status': 'processing'
+                for batch in batches:
+                    # Gerar um novo ID único para cada lote
+                    batch_processor_id = str(uuid.uuid4())
+                    self.batch_control.update_one(
+                        {'_id': batch['_id']},
+                        {
+                            '$set': {
+                                'processor_id': batch_processor_id,
+                                'status': 'processing'
+                            }
                         }
-                    }
-                )
+                    )
+                    # Atualizar o ID no objeto batch que será retornado
+                    batch['processor_id'] = batch_processor_id
             
             return batches
         except Exception as e:

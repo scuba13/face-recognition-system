@@ -19,7 +19,13 @@ class APIClient:
             print(f"✗ Erro ao conectar: {str(e)}")
             
     def get_capture_status(self) -> Dict:
-        """Obtém status do sistema de captura"""
+        """
+        Retorna status do sistema de captura:
+        - Estado do sistema
+        - Configuração das câmeras
+        - Taxa de captura atual (imagens/minuto)
+        - Último frame capturado
+        """
         print("\nSolicitando status de captura...")
         try:
             response = requests.get(f"{self.base_url}/status", timeout=5)

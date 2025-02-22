@@ -98,14 +98,14 @@ class FaceProcessor:
             timestamp_str = batch_path.split('/')[-1]
             capture_datetime = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
 
-            # Criar objeto BatchDetection
+            # Criar objeto BatchDetection usando o processor_id do lote
             batch_detection = BatchDetection(
-                line_id=line_id,  # Agora terá o valor correto (linha_1, linha_2, etc)
+                line_id=line_id,
                 batch_path=batch_path,
                 timestamp=datetime.now(),
                 capture_datetime=capture_datetime,
                 processed_at=datetime.now(),
-                processor_id=os.getenv('PROCESSOR_ID'),
+                processor_id=batch['processor_id'],  # Usar o ID do lote ao invés do ID do processador
                 total_images=total_images,
                 processing_time=(datetime.now() - start_time).total_seconds(),
                 total_faces_detected=total_faces_detected,

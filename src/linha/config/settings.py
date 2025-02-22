@@ -11,7 +11,6 @@ PRODUCTION_LINES = {
             "id": 0,
             "name": "Webcam Principal",
             "resolution": (1280, 960),
-            "fps": 5,
             "position": "entrada"
         },
         # {
@@ -19,7 +18,6 @@ PRODUCTION_LINES = {
         #     "id": 1,
         #     "name": "Webcam Secundária",
         #     "resolution": (1280, 720),
-        #     "fps": 30,
         #     "position": "saida"
         # }
     ],
@@ -29,7 +27,6 @@ PRODUCTION_LINES = {
     #         "id": 0,
     #         "name": "Webcam Principal",
     #         "resolution": (1280, 960),
-    #         "fps": 5,
     #         "position": "entrada"
     #     },
     #     {
@@ -37,7 +34,6 @@ PRODUCTION_LINES = {
     #         "id": 1,
     #         "name": "Webcam Secundária",
     #         "resolution": (1280, 720),
-    #         "fps": 5,
     #         "position": "saida"
     #     }
     # ]
@@ -58,7 +54,7 @@ MONGODB_MAX_POOL_SIZE = 100
 BATCH_LOCK_TIMEOUT = 300  # 5 minutos em segundos
 
 # Configurações de captura
-CAPTURE_INTERVAL = int(os.getenv('CAPTURE_INTERVAL', '5'))
+CAPTURE_INTERVAL = int(os.getenv('CAPTURE_INTERVAL', '5'))  # Intervalo em segundos entre capturas (12 imagens/minuto com valor 5)
 FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.6'))
 MIN_BLUR_THRESHOLD = float(os.getenv('MIN_BLUR_THRESHOLD', '100'))
 

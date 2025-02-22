@@ -80,7 +80,7 @@ class EmployeeCRUD:
             logger.error(f"Erro ao processar imagem facial: {str(e)}")
             raise
 
-    def create(self, id: str, name: str, photo: bytes):
+    def create(self, id: str, name: str, photo: bytes, face_encoding: list = None):
         """Cria novo funcionário"""
         try:
             # Criar diretório se não existir
@@ -97,6 +97,7 @@ class EmployeeCRUD:
                 "employee_id": id,
                 "name": name,
                 "photo_path": photo_path,
+                "face_encoding": face_encoding,
                 "active": True,
                 "created_at": datetime.now()
             }

@@ -7,6 +7,8 @@ from linha.core.instance import (
 )
 from typing import Optional
 from linha.config.settings import FACE_RECOGNITION_TOLERANCE  # Adicionar import
+import face_recognition
+import io
 
 # Criar o router
 router = APIRouter()
@@ -133,11 +135,21 @@ async def create_employee(
         # Ler foto
         photo_bytes = await photo.read()
         
-        # Criar funcionário - corrigindo parâmetro para id
+        # Gerar encoding da face
+        image = face_recognition.load_image_file(io.BytesIO(photo_bytes))
+        face_locations = face_recognition.face_locations(image)
+        
+        if not face_locations:
+            return {'error': 'Nenhuma face detectada na foto'}
+            
+        face_encoding = face_recognition.face_encodings(image, face_locations)[0]
+        
+        # Criar funcionário com encoding
         result = db_handler.employee_crud.create(
             id=employee_id,
             name=name,
-            photo=photo_bytes
+            photo=photo_bytes,
+            face_encoding=face_encoding.tolist()  # Converter numpy array para lista
         )
         
         print(f"Funcionário criado: {result}")

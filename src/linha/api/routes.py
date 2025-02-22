@@ -57,100 +57,39 @@ def get_processor_status():
         db_handler = get_db_handler()
         face_processor = get_face_processor()
         
-        # Buscar estatísticas do MongoDB (últimas 24h, limitado a 100 registros)
-        pipeline = [
-            {
-                '$match': {
-                    'timestamp': {
-                        '$gte': datetime.now() - timedelta(hours=24)
-                    }
-                }
-            },
-            {
-                '$sort': {'timestamp': -1}  # Ordenar mais recentes primeiro
-            },
-            {
-                '$limit': 100  # Limitar a 100 registros
-            },
-            {
-                '$group': {
-                    '_id': {
-                        'hour': {'$dateToString': {'format': "%H:00", 'date': "$timestamp"}}
-                    },
-                    'total_faces': {'$sum': '$faces_detected'},
-                    'recognized_faces': {'$sum': '$faces_recognized'},
-                    'unknown_faces': {'$sum': '$faces_unknown'},
-                    'total_batches': {'$sum': 1},
-                    'avg_time': {'$avg': '$processing_time'},
-                    'avg_confidence': {'$avg': '$avg_confidence'}
-                }
-            },
-            {
-                '$sort': {'_id.hour': 1}
-            }
-        ]
+        # Buscar estatísticas do MongoDB
+        stats = db_handler.get_processor_statistics()
+        history = stats.get('processing_history', [])
         
-        hourly_stats = list(db_handler.db.batch_detections.aggregate(pipeline))
+        # Somar totais do histórico
+        total_faces = sum(batch.get('faces_detected', 0) for batch in history)
+        total_recognized = sum(batch.get('faces_recognized', 0) for batch in history)
+        total_unknown = sum(batch.get('faces_unknown', 0) for batch in history)
         
-        # Calcular totais
-        total_faces = sum(stat['total_faces'] for stat in hourly_stats)
-        total_recognized = sum(stat['recognized_faces'] for stat in hourly_stats)
-        total_unknown = sum(stat['unknown_faces'] for stat in hourly_stats)
-        
-        # Status atual dos lotes (últimos 100)
-        batch_stats = db_handler.db.batch_control.aggregate([
-            {
-                '$sort': {'timestamp': -1}
-            },
-            {
-                '$limit': 100
-            },
-            {
-                '$group': {
-                    '_id': '$status',
-                    'count': {'$sum': 1}
-                }
-            }
-        ])
-        
-        batch_counts = {
-            'pending': 0,
-            'processing': 0,
-            'completed': 0,
-            'error': 0
-        }
-        
-        for stat in batch_stats:
-            status = stat['_id']
-            count = stat['count']
-            if status == 'pending':
-                batch_counts['pending'] = count
-            elif status == 'processing':
-                batch_counts['processing'] = count
-            elif status == 'completed':
-                batch_counts['completed'] = count
-            elif status == 'error':
-                batch_counts['error'] = count
+        # Agrupar processamentos por hora
+        hourly_stats = {}
+        for batch in history:
+            hour = datetime.fromisoformat(batch['timestamp']).strftime("%H:00")
+            if hour not in hourly_stats:
+                hourly_stats[hour] = {'total': 0, 'faces': 0}
+            hourly_stats[hour]['total'] += 1
+            hourly_stats[hour]['faces'] += batch.get('faces_detected', 0)
         
         # Formatar resposta
         response = {
-            'avg_processing_time': sum(stat['avg_time'] for stat in hourly_stats) / len(hourly_stats) if hourly_stats else 0,
+            'avg_processing_time': stats.get('avg_processing_time', 0),
             'total_faces_detected': total_faces,
             'total_faces_recognized': total_recognized,
             'total_faces_unknown': total_unknown,
-            'avg_distance': sum(stat['avg_confidence'] for stat in hourly_stats) / len(hourly_stats) if hourly_stats else 0,
-            'tolerance': FACE_RECOGNITION_TOLERANCE,
-            'pending_batches': batch_counts['pending'],
-            'processing_batches': batch_counts['processing'],
-            'completed_batches': batch_counts['completed'],
-            'error_batches': batch_counts['error'],
+            'avg_distance': stats.get('avg_confidence', 0),
+            'tolerance': FACE_RECOGNITION_TOLERANCE,  # Adicionar tolerância
             'hourly_stats': [
                 {
-                    'hour': stat['_id'],
-                    'total_batches': stat['total_batches'],
-                    'total_faces': stat['total_faces']
+                    'hour': hour,
+                    'total_batches': data['total'],
+                    'total_faces': data['faces']
                 }
-                for stat in sorted(hourly_stats, key=lambda x: x['_id'])  # Garantir ordenação por hora
+                for hour, data in hourly_stats.items()
             ]
         }
         
@@ -160,7 +99,6 @@ def get_processor_status():
     except Exception as e:
         print(f"✗ Erro: {str(e)}")
         return {'error': str(e)}
-
 @router.get("/health")
 def health_check():
     """Verifica se a API está online"""

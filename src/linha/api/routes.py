@@ -146,11 +146,11 @@ def get_processor_status():
             'error_batches': batch_counts['error'],
             'hourly_stats': [
                 {
-                    'hour': stat['_id']['hour'],
+                    'hour': stat['_id'],
                     'total_batches': stat['total_batches'],
                     'total_faces': stat['total_faces']
                 }
-                for stat in hourly_stats
+                for stat in sorted(hourly_stats, key=lambda x: x['_id'])  # Garantir ordenação por hora
             ]
         }
         

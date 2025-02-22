@@ -66,6 +66,19 @@ def get_processor_status():
         total_recognized = sum(batch.get('faces_recognized', 0) for batch in history)
         total_unknown = sum(batch.get('faces_unknown', 0) for batch in history)
         
+        # Status dos lotes
+        batch_counts = {
+            'pending': 0,
+            'processing': 0,
+            'completed': 0,
+            'error': 0
+        }
+        
+        for batch in db_handler.db.batch_control.find():
+            status = batch.get('status')
+            if status in batch_counts:
+                batch_counts[status] += 1
+        
         # Agrupar processamentos por hora
         hourly_stats = {}
         for batch in history:
@@ -82,7 +95,11 @@ def get_processor_status():
             'total_faces_recognized': total_recognized,
             'total_faces_unknown': total_unknown,
             'avg_distance': stats.get('avg_confidence', 0),
-            'tolerance': FACE_RECOGNITION_TOLERANCE,  # Adicionar tolerância
+            'tolerance': FACE_RECOGNITION_TOLERANCE,
+            'pending_batches': batch_counts['pending'],
+            'processing_batches': batch_counts['processing'],
+            'completed_batches': batch_counts['completed'],
+            'error_batches': batch_counts['error'],
             'hourly_stats': [
                 {
                     'hour': hour,
@@ -99,6 +116,7 @@ def get_processor_status():
     except Exception as e:
         print(f"✗ Erro: {str(e)}")
         return {'error': str(e)}
+
 @router.get("/health")
 def health_check():
     """Verifica se a API está online"""

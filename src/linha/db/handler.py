@@ -33,15 +33,31 @@ class MongoDBHandler:
         self.detections = self.db.detections
         self.employees = self.db.employees
         
-        # Índices
+        # Índices otimizados
         self.batch_control.create_index([
             ("line_id", 1),
             ("status", 1),
             ("processor_id", 1)
         ])
-        self.batch_control.create_index([("locked_at", 1)], expireAfterSeconds=BATCH_LOCK_TIMEOUT)
-        self.employees.create_index([("employee_id", 1)], unique=True)
-        self.detections.create_index([("batch_path", 1)], unique=True)
+        
+        self.detections.create_index([
+            ("line_id", 1),
+            ("timestamp", -1)
+        ])
+        
+        self.detections.create_index([
+            ("batch_path", 1)
+        ], unique=True)
+        
+        self.employees.create_index([
+            ("employee_id", 1)
+        ], unique=True)
+        
+        # Índice TTL para limpeza automática
+        self.batch_control.create_index(
+            "processed_at", 
+            expireAfterSeconds=30*24*60*60  # 30 dias
+        )
 
     @backoff.on_exception(backoff.expo, PyMongoError, max_tries=3)
     def register_new_batch(self, line_id: str, batch_path: str):
@@ -212,3 +228,13 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Erro ao buscar detecções recentes: {str(e)}")
             return [] 
+
+    @backoff.on_exception(backoff.expo, PyMongoError, max_tries=3)
+    def register_batch_detections(self, detections):
+        """Registra múltiplas detecções em batch"""
+        try:
+            if detections:
+                self.detections.insert_many(detections, ordered=False)
+                logger.info(f"Registradas {len(detections)} detecções em batch")
+        except Exception as e:
+            logger.error(f"Erro ao registrar detecções em batch: {str(e)}") 

@@ -8,6 +8,7 @@ from threading import Thread
 from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES
 from linha.db.models import BatchDetection  # Importar o modelo
 import shutil  # Adicionar import
+import cv2  # Adicionar import para cv2
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +41,15 @@ class FaceProcessor:
     def process_batch(self, batch):
         """Processa um lote de imagens"""
         batch_path = batch['batch_path']
-        
-        # Corrigir extração do line_id
-        # Antes: line_id = batch_path.split('/')[1]  # Pegava 'Users' do path
-        line_id = batch_path.split('captured_images/')[1].split('/')[0]  # Pega 'linha_1' ou 'linha_2'
+        line_id = batch_path.split('captured_images/')[1].split('/')[0]
         
         try:
-            self.db_handler.update_batch_status(batch_path, 'processing')
-            
             total_images = 0
             total_faces_detected = 0
             total_faces_unknown = 0
             detections = {}
             start_time = datetime.now()
+            batch_detections = []  # Lista para bulk insert
             
             image_files = [f for f in os.listdir(batch_path) 
                           if f.endswith(('.jpg', '.jpeg', '.png'))]
@@ -62,12 +59,36 @@ class FaceProcessor:
                 total_images += 1
                 
                 try:
-                    image = face_recognition.load_image_file(image_path)
-                    face_locations = face_recognition.face_locations(image)
+                    # Carregar e redimensionar imagem
+                    image = cv2.imread(image_path)
+                    if image is None:
+                        continue
+                        
+                    # Redimensionar mantendo proporção
+                    height, width = image.shape[:2]
+                    max_dimension = 800  # Limitar tamanho máximo
+                    
+                    if height > max_dimension or width > max_dimension:
+                        scale = max_dimension / max(height, width)
+                        image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+                    
+                    # Converter para RGB (face_recognition usa RGB)
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    
+                    # Detectar faces
+                    face_locations = face_recognition.face_locations(
+                        image,
+                        model="hog"  # Usar CNN se GPU disponível
+                    )
                     total_faces_detected += len(face_locations)
                     
                     if face_locations:
-                        face_encodings = face_recognition.face_encodings(image, face_locations)
+                        # Processar faces em batch
+                        face_encodings = face_recognition.face_encodings(
+                            image, 
+                            face_locations,
+                            num_jitters=1  # Aumentar para mais precisão
+                        )
                         
                         for face_encoding in face_encodings:
                             result = self.db_handler.find_matching_face(

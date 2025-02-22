@@ -112,16 +112,9 @@ class MongoDBHandler:
             logger.error(f"Erro ao buscar lotes pendentes: {str(e)}")
             return []
 
-    def get_processing_batches(self, line_id: str = None):
+    def get_processing_batches(self):
         """Retorna lotes em processamento"""
-        try:
-            query = {'status': 'processing'}
-            if line_id:
-                query['line_id'] = line_id
-            return list(self.batch_control.find(query))
-        except Exception as e:
-            logger.error(f"Erro ao buscar lotes em processamento: {str(e)}")
-            return []
+        return list(self.batch_control.find({'status': 'processing'}))
 
     def get_completed_batches(self, line_id: str = None):
         """Retorna lotes completados"""
@@ -148,13 +141,39 @@ class MongoDBHandler:
             {'$set': update}
         )
 
-    def register_batch_detection(self, detection):
-        """Registra detecções de um lote"""
+    def register_batch_detection(self, batch_detection):
+        """Registra uma detecção de lote no banco"""
         try:
-            self.detections.insert_one(detection.to_dict())
-            logger.info(f"Detecções registradas para lote: {detection.batch_path}")
+            logger.info("\n=== Registrando detecção de lote ===")
+            
+            # Converter para dicionário
+            detection_data = {
+                'line_id': batch_detection.line_id,
+                'batch_path': batch_detection.batch_path,
+                'timestamp': batch_detection.timestamp,
+                'capture_datetime': batch_detection.capture_datetime,
+                'processed_at': batch_detection.processed_at,
+                'processor_id': batch_detection.processor_id,
+                'total_images': batch_detection.total_images,
+                'processing_time': batch_detection.processing_time,
+                'total_faces_detected': batch_detection.total_faces_detected,
+                'total_faces_recognized': batch_detection.total_faces_recognized,
+                'total_faces_unknown': batch_detection.total_faces_unknown,
+                'preprocessing_enabled': batch_detection.preprocessing_enabled,
+                'detections': batch_detection.detections
+            }
+            
+            logger.info(f"Dados para inserção: {detection_data}")
+            
+            # Inserir no banco
+            result = self.detections.insert_one(detection_data)
+            logger.info(f"Detecção registrada com ID: {result.inserted_id}")
+            
+            return result.inserted_id
+            
         except Exception as e:
-            logger.error(f"Erro ao registrar detecções: {str(e)}")
+            logger.error(f"Erro ao registrar detecção: {str(e)}", exc_info=True)
+            raise
 
     def find_matching_face(self, face_encoding, tolerance=0.6):
         """Busca face mais próxima no banco"""
@@ -199,35 +218,32 @@ class MongoDBHandler:
             logger.error(f"Erro ao listar funcionários: {str(e)}")
             return [] 
 
-    def get_recent_detections(self, line_id: str = None, days: int = 7):
-        """
-        Retorna detecções recentes
-        Args:
-            line_id: ID da linha (opcional)
-            days: Número de dias para buscar (default 7)
-        """
+    def get_recent_detections(self, days=1):
+        """Retorna detecções dos últimos X dias"""
         try:
-            # Calcular data limite
-            date_limit = datetime.now() - timedelta(days=days)
+            logger.info(f"Buscando detecções dos últimos {days} dias")
+            cutoff = datetime.now() - timedelta(days=days)
+            logger.info(f"Data limite: {cutoff}")
             
             # Construir query
-            query = {
-                'timestamp': {'$gte': date_limit}
-            }
-            if line_id:
-                query['line_id'] = line_id
+            query = {'timestamp': {'$gte': cutoff}}
+            logger.info(f"Query: {query}")
             
-            # Buscar detecções ordenadas por data
-            detections = self.detections.find(
+            # Executar busca
+            detections = list(self.detections.find(
                 query,
-                sort=[('timestamp', -1)]  # Mais recentes primeiro
-            )
+                sort=[('timestamp', -1)]
+            ))
             
-            return list(detections)
+            logger.info(f"Detecções encontradas: {len(detections)}")
+            for det in detections[:5]:  # Mostrar primeiras 5
+                logger.debug(f"Detecção: {det['_id']} - {det['timestamp']}")
+            
+            return detections
             
         except Exception as e:
-            logger.error(f"Erro ao buscar detecções recentes: {str(e)}")
-            return [] 
+            logger.error(f"Erro ao buscar detecções recentes: {str(e)}", exc_info=True)
+            return []
 
     @backoff.on_exception(backoff.expo, PyMongoError, max_tries=3)
     def register_batch_detections(self, detections):
@@ -238,3 +254,88 @@ class MongoDBHandler:
                 logger.info(f"Registradas {len(detections)} detecções em batch")
         except Exception as e:
             logger.error(f"Erro ao registrar detecções em batch: {str(e)}") 
+
+    def get_processor_statistics(self, days=1):
+        """Retorna estatísticas de processamento dos últimos X dias"""
+        try:
+            print("\n=== Buscando estatísticas de processamento ===")
+            
+            # Buscar dados dos últimos X dias
+            cutoff = datetime.now() - timedelta(days=days)
+            pipeline = [
+                {'$match': {'timestamp': {'$gte': cutoff}}},
+                {'$group': {
+                    '_id': None,
+                    'total_batches': {'$sum': 1},
+                    'total_time': {'$sum': '$processing_time'},
+                    'total_faces': {'$sum': '$total_faces_detected'},
+                    'recognized_faces': {'$sum': '$total_faces_recognized'},
+                    'unknown_faces': {'$sum': '$total_faces_unknown'},
+                    'unique_people': {'$addToSet': '$detections.employee_id'},
+                    'avg_confidence': {'$avg': {'$arrayElemAt': ['$detections.average_confidence', 0]}}
+                }}
+            ]
+            
+            result = list(self.detections.aggregate(pipeline))
+            print(f"Resultado agregação: {result}")
+            
+            # Buscar últimos 50 registros para histórico
+            history = list(self.detections.find(
+                {},
+                {'timestamp': 1, 'processing_time': 1, 'total_faces_detected': 1, 'total_faces_recognized': 1},
+                sort=[('timestamp', -1)],
+                limit=50
+            ))
+            
+            # Buscar contagens de lotes
+            pending = len(self.get_pending_batches())
+            processing = len(self.get_processing_batches())
+            
+            if result:
+                metrics = result[0]
+                total_batches = metrics['total_batches']
+                
+                stats = {
+                    'running': True,
+                    'pending_batches': pending,
+                    'processing_batches': processing,
+                    'completed_batches': total_batches,
+                    'avg_processing_time': metrics['total_time'] / total_batches,
+                    'total_faces_detected': metrics['total_faces'],
+                    'total_faces_recognized': metrics['recognized_faces'],
+                    'total_faces_unknown': metrics['unknown_faces'],
+                    'recognition_rate': metrics['recognized_faces'] / metrics['total_faces'] if metrics['total_faces'] > 0 else 0,
+                    'unique_people_recognized': len(metrics['unique_people']),
+                    'avg_confidence': metrics['avg_confidence'] or 0,
+                    'processing_history': [
+                        {
+                            'timestamp': h['timestamp'].isoformat(),
+                            'processing_time': h['processing_time'],
+                            'faces_detected': h['total_faces_detected'],
+                            'faces_recognized': h['total_faces_recognized']
+                        }
+                        for h in history
+                    ]
+                }
+            else:
+                stats = {
+                    'running': True,
+                    'pending_batches': pending,
+                    'processing_batches': processing,
+                    'completed_batches': 0,
+                    'avg_processing_time': 0,
+                    'total_faces_detected': 0,
+                    'total_faces_recognized': 0,
+                    'total_faces_unknown': 0,
+                    'recognition_rate': 0,
+                    'unique_people_recognized': 0,
+                    'avg_confidence': 0,
+                    'processing_history': []
+                }
+                
+            print(f"Estatísticas calculadas: {stats}")
+            return stats
+            
+        except Exception as e:
+            print(f"ERRO ao calcular estatísticas: {str(e)}")
+            return {'error': str(e)} 

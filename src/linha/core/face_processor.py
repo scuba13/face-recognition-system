@@ -12,6 +12,7 @@ import cv2  # Adicionar import para cv2
 from concurrent.futures import ThreadPoolExecutor
 import gc  # Para garbage collection
 from linha.utils.image_preprocessing import ImagePreprocessor
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -197,3 +198,31 @@ class FaceProcessor:
     def stop_processing(self):
         """Para o processamento"""
         self.running = False 
+
+    def get_stats(self) -> Dict:
+        """Retorna estatísticas do processador"""
+        try:
+            print("\n=== Buscando estatísticas de processamento ===")
+            
+            # Buscar dados do MongoDB
+            stats = self.db_handler.get_processor_statistics()
+            
+            # Adicionar status atual
+            stats.update({
+                'running': self.running,
+                'avg_processing_time': stats.get('avg_processing_time', 0),
+                'total_faces_detected': stats.get('total_faces', 0),
+                'total_faces_recognized': stats.get('recognized_faces', 0),
+                'avg_confidence': stats.get('avg_confidence', 0),
+                'processing_history': stats.get('processing_history', [])
+            })
+            
+            print(f"Estatísticas calculadas: {stats}")
+            return stats
+            
+        except Exception as e:
+            print(f"✗ Erro ao buscar estatísticas: {str(e)}")
+            return {
+                'error': str(e),
+                'running': self.running
+            } 

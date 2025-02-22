@@ -69,7 +69,7 @@ class FrontendApp:
             self.api = APIClient()
             
             # Verificar se API está disponível
-            status = self.api.get_capture_status()
+            status = self.api.health_check()
             if 'error' in status:
                 error_msg = status['error']
                 print(f"✗ Erro: {error_msg}")
@@ -141,29 +141,33 @@ class FrontendApp:
         st.title("Sistema de Reconhecimento Facial")
         st.markdown("---")
         
+        # Buscar dados do dashboard
+        dashboard = self.api.get_dashboard()
+        
+        if 'error' in dashboard:
+            st.error(f"❌ Erro ao carregar dashboard: {dashboard['error']}")
+            return
+        
         # Cards informativos
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.info("👥 Funcionários Cadastrados")
-            result = self.api.list_employees()
-            total_employees = len(result.get('employees', []))
-            st.metric("Total", total_employees)
+            st.metric("Total", dashboard['total_employees'])
             
         with col2:
             st.warning("📸 Câmeras Ativas")
-            status = self.api.get_capture_status()
-            active_cameras = len([c for c in status.get('cameras', {}).values() if c.get('is_opened', False)])
-            st.metric("Total", active_cameras)
+            st.metric("Total", dashboard['active_cameras'])
             
         with col3:
             st.success("✅ Sistema")
-            processor_status = self.api.get_processor_status()
-            status = "Online" if processor_status.get('running', False) else "Offline"
-            st.metric("Status", status)
+            st.metric("Status", dashboard['system_status'])
 
 def main():
+    # Inicializar app
     app = FrontendApp()
+    
+    # Renderizar interface
     app.render()
 
 if __name__ == "__main__":

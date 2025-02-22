@@ -18,12 +18,13 @@ class ImageCapture:
     def __init__(self, production_lines, interval=CAPTURE_INTERVAL):
         self.production_lines = production_lines
         self.interval = interval  # Intervalo desejado entre capturas
-        self.running = False
+        self.running = True
         self.capture_threads = []
         self.cameras = {}  # {camera_key: camera_instance}
         self.db_handler = None
         self.batch_dirs = {}  # {line_id: (dir, minute, image_count, start_time)}
         self.lock = Lock()
+        self.last_capture_times = {}  # Dicionário para armazenar último tempo de captura por câmera
 
     def set_db_handler(self, db_handler):
         self.db_handler = db_handler
@@ -72,11 +73,11 @@ class ImageCapture:
                     'is_configured': True,
                     'is_opened': True,
                     'can_capture': True,
-                    'last_image_time': None,
                     'frames_count': 0,
                     'fps_start_time': datetime.now()
                 }
                 self.cameras[camera_id] = camera_data
+                self.last_capture_times[camera_id] = None  # Inicializar no dicionário
                 logger.info(f"Câmera {camera_config['name']} inicializada para linha {line_id}")
                 return camera_data
             return None
@@ -163,13 +164,13 @@ class ImageCapture:
                     # Incrementar contador do lote
                     self._increment_batch_count(line_id)
 
-                    # Atualizar contadores
+                    # Atualizar contadores e tempo
                     camera['frames_count'] += 1
-                    camera['last_image_time'] = now.isoformat()
-
+                    self.last_capture_times[camera_key] = now.isoformat()  # Usar last_capture_times
+                    
                     # Usar o intervalo definido para controlar capturas por minuto
                     time.sleep(self.interval)
-                
+
                 except Exception as e:
                     logger.error(f"Erro no loop de captura: {str(e)}")
                     time.sleep(1)
@@ -340,53 +341,77 @@ class ImageCapture:
                 return fps
         return 0
 
-    def get_capture_status(self) -> dict:
-        """Retorna status detalhado do sistema de captura"""
+    def get_camera_status(self, camera_id):
+        """Retorna status de uma câmera no formato esperado pelo frontend"""
+        camera = self.cameras.get(camera_id)
+        if not camera:
+            return {
+                'name': 'N/A',
+                'position': 'unknown',
+                'is_configured': False,
+                'is_opened': False,
+                'can_capture': False,
+                'last_image_time': None,
+                'fps': 0
+            }
+        
+        return {
+            'name': camera['name'],
+            'position': camera.get('position', 'unknown'),
+            'is_configured': camera['is_configured'],
+            'is_opened': camera['cap'].isOpened(),
+            'can_capture': camera['can_capture'],
+            'last_image_time': self.last_capture_times.get(camera_id),
+            'fps': self.calculate_fps(camera_id)
+        }
+
+    def get_status(self):
+        """Retorna status completo no formato esperado pelo frontend"""
         try:
+            logger.debug("Gerando status do sistema")
             status = {
                 'system_running': self.running,
-                'cameras_configured': bool(self.cameras),
-                'cameras': {},
-                'is_capturing': False
+                'cameras_configured': len(self.cameras) > 0,
+                'is_capturing': self.running and len(self.cameras) > 0,
+                'cameras': {}
             }
             
-            # Status por câmera
+            # Status por câmera no formato esperado
             for line_id, cameras in self.production_lines.items():
                 for cam in cameras:
-                    camera_key = f"{line_id}_usb_{cam['id']}"
-                    camera_status = {
-                        'name': cam['name'],
-                        'position': cam['position'],
-                        'is_configured': camera_key in self.cameras,
-                        'is_opened': False,
-                        'can_capture': False,
-                        'last_image_time': None,
-                        'fps': 0
-                    }
-                    
-                    if camera_key in self.cameras:
-                        camera = self.cameras[camera_key]
-                        camera_status.update({
-                            'is_opened': camera['cap'].isOpened(),
-                            'can_capture': camera['can_capture'],
-                            'last_image_time': camera['last_image_time'],
-                            'fps': self.calculate_fps(camera_key)  # Usar novo cálculo de FPS
-                        })
-                    
-                    status['cameras'][camera_key] = camera_status
+                    camera_id = f"{line_id}_usb_{cam['id']}"
+                    logger.debug(f"Obtendo status da câmera {camera_id}")
+                    status['cameras'][camera_id] = self.get_camera_status(camera_id)
             
-            status['is_capturing'] = any(
-                cam['can_capture'] for cam in status['cameras'].values()
-            )
-            
+            logger.debug(f"Status gerado: {status}")
             return status
             
         except Exception as e:
-            logger.error(f"Erro ao obter status: {str(e)}")
+            logger.error(f"Erro ao obter status: {str(e)}", exc_info=True)
             return {
+                'error': str(e),
                 'system_running': False,
                 'cameras_configured': False,
-                'cameras': {},
                 'is_capturing': False,
-                'error': str(e)
-            } 
+                'cameras': {}
+            }
+
+    def __getattr__(self, name):
+        """Handler para atributos não encontrados"""
+        if name == 'last_capture_time':
+            import traceback
+            stack = traceback.extract_stack()
+            logger.error("Tentativa de acessar 'last_capture_time' - Stack trace:")
+            for filename, line, func, text in stack[:-1]:  # -1 para excluir esta função
+                logger.error(f"  File {filename}, line {line}, in {func}")
+                logger.error(f"    {text}")
+            
+            # Retornar o primeiro valor de last_capture_times ou None
+            if self.last_capture_times:
+                camera_id = next(iter(self.last_capture_times.keys()))
+                logger.warning(f"Retornando valor de {camera_id}: {self.last_capture_times[camera_id]}")
+                return self.last_capture_times[camera_id]
+            logger.warning("Nenhum valor de last_capture_times disponível")
+            return None
+        
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'") 

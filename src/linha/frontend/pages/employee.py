@@ -181,24 +181,30 @@ def render_employee_page(api_client):
                         st.rerun()
                         
                     if update:
-                        try:
-                            update_data = {"name": new_name}
-                            
-                            if new_photo:
-                                with tempfile.TemporaryDirectory() as temp_dir:
-                                    temp_file = os.path.join(temp_dir, new_photo.name)
-                                    with open(temp_file, "wb") as f:
-                                        f.write(new_photo.getbuffer())
-                                    
-                                    # O CRUD já faz o encoding da nova foto
-                                    update_data["photo_path"] = temp_file
-                            
-                            if api_client.update_employee(emp["employee_id"], update_data):
-                                st.success("✅ Funcionário atualizado!")
-                                st.session_state.show_edit_form = False
-                                st.rerun()
-                            
-                        except ValueError as e:
-                            st.error(f"❌ Erro de validação: {str(e)}")
-                        except Exception as e:
-                            st.error(f"❌ Erro ao atualizar: {str(e)}") 
+                        print(f"\n=== Frontend: Atualizando funcionário ===")
+                        print(f"ID: {emp['employee_id']}")
+                        print(f"Nome antigo: {emp['name']}")
+                        print(f"Nome novo: {new_name}")  # Aqui está o nome novo
+                        
+                        # Atualizar usando novo método
+                        if update_employee(api_client, emp["employee_id"], new_name, new_photo):
+                            st.success("✅ Funcionário atualizado!")
+                            st.session_state.show_edit_form = False
+                            st.rerun()
+
+def update_employee(api_client, employee_id: str, name: str, photo=None, active: bool = None):
+    """Atualiza funcionário"""
+    try:
+        result = api_client.update_employee(
+            employee_id=employee_id,
+            name=name,  # Aqui está passando o nome correto
+            photo=photo,
+            active=active
+        )
+        if 'error' in result:
+            st.error(f"❌ Erro ao atualizar: {result['error']}")
+            return False
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao atualizar: {str(e)}")
+        return False 

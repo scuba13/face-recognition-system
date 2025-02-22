@@ -5,45 +5,66 @@ import pandas as pd
 import logging
 from linha.frontend.api_client import APIClient
 import time
-from linha.config.settings import CAPTURE_INTERVAL
+from linha.config.settings import CAPTURE_INTERVAL, ENABLE_PREPROCESSING
 
 logger = logging.getLogger(__name__)
 
 def render_monitoring_page(api_client):
     """Renderiza página de monitoramento"""
-    st.title("Monitoramento do Sistema")
-    
-    # Botão de atualização
-    if st.button("🔄 Atualizar Dados", use_container_width=True):
-        st.rerun()
-    
-    # Buscar dados
-    status = api_client.get_capture_status()
-    processor_status = api_client.get_processor_status()
-    
-    # Tabs para organizar o conteúdo
-    tab1, tab2, tab3 = st.tabs(["Câmeras", "Processamento", "Detecções"])
-    
-    # Tab Câmeras
-    with tab1:
-        if 'error' in status:
-            st.error(f"❌ {status['error']}")
-        else:
-            col1, col2, col3 = st.columns(3)
+    try:
+        st.title("Monitoramento do Sistema")
+        
+        # Botão de atualização
+        if st.button("🔄 Atualizar Dados", use_container_width=True):
+            st.rerun()
+        
+        # Inicializar estado da tab ativa
+        if "active_tab" not in st.session_state:
+            st.session_state.active_tab = "Câmeras"
+            
+        # Seletor de tabs
+        st.session_state.active_tab = st.radio(
+            "Selecione a aba:",
+            ["Câmeras", "Processamento"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        
+        print(f"\n=== Renderizando tab: {st.session_state.active_tab} ===")
+        
+        # Renderizar conteúdo da tab ativa
+        if st.session_state.active_tab == "Câmeras":
+            print("\nChamando GET /cameras/status")
+            status = api_client.get_capture_status()
+            print(f"Resposta: {status}")
+            if 'error' in status:
+                st.error(f"❌ Erro: {status['error']}")
+                return
+            
+            # Mostrar status das câmeras
+            st.write("### Status das Câmeras")
+            # Métricas globais do sistema
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Sistema", "✅ Online" if status['system_running'] else "❌ Offline")
             with col2:
                 st.metric("Câmeras", "✅ OK" if status['cameras_configured'] else "❌ Erro")
             with col3:
                 st.metric("Captura", "✅ Ativa" if status['is_capturing'] else "❌ Parada")
+            with col4:
+                # Taxa de captura global
+                images_per_minute = 60 / CAPTURE_INTERVAL if CAPTURE_INTERVAL > 0 else 0
+                help_text = f"Intervalo entre capturas: {CAPTURE_INTERVAL}s"
+                st.metric("Taxa de Captura", f"{images_per_minute:.1f} img/min", help=help_text)
             
+            # Status por câmera
             cameras = status.get('cameras', {})
             for camera_id, camera in cameras.items():
                 st.markdown("---")
                 line_id = camera_id.split('_usb_')[0]
                 st.subheader(f"Linha: {line_id}")
                 
-                cols = st.columns(5)
+                cols = st.columns(4)  # Agora 4 colunas ao invés de 5
                 cols[0].markdown("**Câmera**")
                 cols[0].write(camera['name'])
                 
@@ -65,94 +86,70 @@ def render_monitoring_page(api_client):
                         cols[3].warning(f"⚠️ {diff.seconds//60}min atrás")
                 else:
                     cols[3].write("🕒 Aguardando...")
-                
-                cols[4].markdown("**Taxa de Captura**")
-                fps = camera.get('fps', 0)
-                # Converter FPS para imagens por minuto (60 segundos / intervalo)
-                images_per_minute = 60 / CAPTURE_INTERVAL if CAPTURE_INTERVAL > 0 else 0
-                cols[4].metric(
-                    "", 
-                    f"{images_per_minute:.1f} img/min",
-                    help=f"Intervalo entre capturas: {CAPTURE_INTERVAL}s"
-                )
-    
-    # Tab Processamento
-    with tab2:
-        if 'error' in processor_status:
-            st.error(f"❌ {processor_status['error']}")
-        else:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Lotes Pendentes", processor_status.get('pending_batches', 0))
-            with col2:
-                st.metric("Em Processamento", processor_status.get('processing_batches', 0))
-            with col3:
-                st.metric("Processados", processor_status.get('completed_batches', 0))
-    
-    # Tab Detecções
-    with tab3:
-        st.subheader("Últimas Detecções")
         
-        # Filtros com keys únicas
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_line = st.selectbox(
-                "Linha de Produção",
-                options=["Todas"] + list(cameras.keys()),
-                key=f"detections_line_select_{int(time.time())}"
-            )
-        with col2:
-            days = st.number_input(
-                "Últimos dias", 
-                min_value=1, 
-                value=7,
-                key=f"days_input_{int(time.time())}"
-            )
+        elif st.session_state.active_tab == "Processamento":
+            print("\nChamando GET /processor/status")
+            processor_status = api_client.get_processor_status()
+            print(f"Resposta: {processor_status}")
             
-        # Buscar detecções
-        detections = processor_status.get('recent_detections', [])
-        
-        if not detections:
-            st.info("Nenhuma detecção encontrada")
-        else:
-            # Criar dataframe
-            data = []
-            for det in detections:
-                # Filtrar por linha se selecionada
-                if selected_line != "Todas" and det.get('line_id') != selected_line:
-                    continue
-                    
-                # Verificar se tem detecções
-                if 'detections' in det and det['detections']:
-                    for person in det['detections']:
-                        data.append({
-                            "Data/Hora": datetime.fromisoformat(det['timestamp']).strftime("%d/%m/%Y %H:%M"),
-                            "Linha": det.get('line_id', 'N/A'),
-                            "Câmera": det.get('camera_id', 'N/A'),
-                            "Funcionário": person.get('name', 'Desconhecido'),
-                            "Confiança": f"{person.get('confidence', 0):.1%}"
-                        })
-            
-            if data:
-                df = pd.DataFrame(data)
-                st.dataframe(df, hide_index=True)
-                
-                # Estatísticas
-                st.markdown("---")
-                st.subheader("Estatísticas")
-                
-                col1, col2 = st.columns(2)
-                
-                # Total por linha
-                with col1:
-                    by_line = df["Linha"].value_counts()
-                    st.bar_chart(by_line)
-                    st.write("Detecções por Linha")
-                
-                # Total por funcionário
-                with col2:
-                    by_employee = df["Funcionário"].value_counts().head(10)
-                    st.bar_chart(by_employee)
-                    st.write("Top 10 Funcionários")
+            if 'error' in processor_status:
+                st.error(f"❌ {processor_status['error']}")
             else:
-                st.info("Nenhuma detecção encontrada para os filtros selecionados") 
+                # Métricas principais
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Tempo Médio/Lote",
+                        f"{processor_status['avg_processing_time']:.1f}s",
+                        help="Tempo médio de processamento por lote"
+                    )
+                with col2:
+                    st.metric(
+                        "Faces Detectadas/Reconhecidas",
+                        f"{processor_status['total_faces_recognized']}/{processor_status['total_faces_detected']}",
+                        help="Total de faces detectadas vs reconhecidas"
+                    )
+                with col3:
+                    st.metric(
+                        "Faces Não Reconhecidas",
+                        processor_status['total_faces_unknown'],
+                        help="Total de faces que não foram reconhecidas"
+                    )
+                
+                # Segunda linha de métricas
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Distância Média",
+                        f"{processor_status['avg_distance']:.3f}",
+                        help="Média das distâncias entre faces (menor = mais similar)"
+                    )
+                with col2:
+                    st.metric(
+                        "Tolerância",
+                        f"{processor_status['tolerance']:.3f}",
+                        help="Limite de distância para reconhecimento (maior = mais permissivo)"
+                    )
+                
+                # Gráfico por hora
+                st.markdown("---")
+                st.subheader("Processamentos por Hora")
+                
+                hourly_data = processor_status['hourly_stats']
+                if hourly_data:
+                    df = pd.DataFrame(hourly_data)
+                    df = df.sort_values('hour')
+                    
+                    # Gráficos em 2 colunas
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.line_chart(df.set_index('hour')['total_batches'])
+                        st.write("Total de Lotes")
+                    with col2:
+                        st.line_chart(df.set_index('hour')['total_faces'])
+                        st.write("Total de Faces")
+        
+    except Exception as e:
+        st.error("❌ Erro ao carregar dados")
+        st.error(str(e))
+        logger.exception("Erro na página de monitoramento") 

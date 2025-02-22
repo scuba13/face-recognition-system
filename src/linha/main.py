@@ -3,6 +3,7 @@ import os
 import time
 import uuid
 from threading import Thread
+from fastapi import FastAPI
 
 from linha.core.face_processor import FaceProcessor
 from linha.core.image_capture import ImageCapture
@@ -12,8 +13,10 @@ from linha.config.settings import (
     CAPTURE_INTERVAL
 )
 from linha.utils.logger import setup_colored_logging
-from linha.core.instance import set_image_capture, set_face_processor
+from linha.core.instance import set_image_capture, set_face_processor, set_db_handler
 from linha.api.server import start_api_server
+from linha.api.routes import router  # Importar rotas
+import uvicorn
 
 def main():
     try:
@@ -34,6 +37,7 @@ def main():
         face_processor = FaceProcessor(db_handler)
         
         # Salvar globalmente
+        set_db_handler(db_handler)
         set_image_capture(image_capture)
         set_face_processor(face_processor)
         
@@ -43,7 +47,7 @@ def main():
         image_capture.start_capture()
         print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
         
-        # Depois iniciar API
+        # Iniciar API em thread separada
         api_thread = Thread(target=start_api_server)
         api_thread.daemon = True
         api_thread.start()

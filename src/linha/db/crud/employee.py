@@ -80,59 +80,39 @@ class EmployeeCRUD:
             logger.error(f"Erro ao processar imagem facial: {str(e)}")
             raise
 
-    def create(self, data: Dict) -> str:
+    def create(self, id: str, name: str, photo: bytes):
         """Cria novo funcionário"""
         try:
-            # Validar dados obrigatórios
-            if not all(k in data for k in ["employee_id", "name", "photo_path"]):
-                raise ValueError("Dados incompletos")
+            # Criar diretório se não existir
+            employee_dir = os.path.join(EMPLOYEES_DIR, id)
+            os.makedirs(employee_dir, exist_ok=True)
             
-            # Verificar se já existe
-            if self.get(data["employee_id"]):
-                raise ValueError("Funcionário já cadastrado")
+            # Salvar foto
+            photo_path = os.path.join(employee_dir, "photo.jpg")
+            with open(photo_path, "wb") as f:
+                f.write(photo)
             
-            # Processar foto antes de salvar
-            try:
-                # Carregar e validar imagem
-                image = face_recognition.load_image_file(data["photo_path"])
-                if image is None:
-                    raise ValueError("Imagem inválida")
-                
-                # Processar face
-                face_encoding, face_location, face_image = self._process_face_image(data["photo_path"])
-                
-                # Salvar foto em local permanente
-                photo_path = self._save_photo(data["photo_path"], data["employee_id"])
-                
-                # Atualizar dados com informações faciais
-                employee_data = {
-                    "employee_id": data["employee_id"],
-                    "name": data["name"],
-                    "photo_path": photo_path,
-                    "face_encoding": face_encoding.tolist(),
-                    "face_location": list(face_location),
-                    "face_quality_score": float(np.mean(np.abs(face_encoding))),
-                    "active": True,
-                    "created_at": datetime.now()
-                }
-                
-                # Inserir no banco
-                result = self.collection.insert_one(employee_data)
-                
-                logger.info(f"Funcionário criado: {data['employee_id']}")
-                return str(result.inserted_id)
-                
-            except Exception as e:
-                # Limpar arquivos em caso de erro
-                if 'photo_path' in locals():
-                    try:
-                        os.remove(photo_path)
-                    except:
-                        pass
-                raise e
+            # Criar documento
+            employee = {
+                "employee_id": id,
+                "name": name,
+                "photo_path": photo_path,
+                "active": True,
+                "created_at": datetime.now()
+            }
+            
+            # Inserir no banco
+            result = self.collection.insert_one(employee)
+            print(f"✓ Funcionário criado com ID: {result.inserted_id}")
+            
+            return {
+                "employee_id": id,
+                "name": name,
+                "photo_path": photo_path
+            }
             
         except Exception as e:
-            logger.error(f"Erro ao criar funcionário: {str(e)}")
+            print(f"✗ Erro ao criar funcionário: {e}")
             raise
 
     def get(self, employee_id: str) -> Optional[Dict]:
@@ -149,70 +129,46 @@ class EmployeeCRUD:
             logger.error(f"Erro ao buscar funcionário: {str(e)}")
             return None
 
-    def list(self, active_only: bool = True) -> List[Dict]:
+    def list(self, active_only: bool = True):
         """Lista funcionários"""
         try:
-            # Buscar funcionários
+            # Filtro de ativos
             query = {"active": True} if active_only else {}
-            cursor = self.collection.find(query)
             
-            # Converter para lista de dicts serializáveis
+            # Buscar funcionários
             employees = []
-            for emp in cursor:
-                employee = {
-                    "id": str(emp["_id"]),
-                    "employee_id": emp["employee_id"],
-                    "name": emp["name"],
-                    "active": emp.get("active", True),
-                    "photo_path": emp.get("photo_path", ""),
-                    "created_at": emp.get("created_at", "").isoformat() if emp.get("created_at") else "",
-                    "updated_at": emp.get("updated_at", "").isoformat() if emp.get("updated_at") else ""
-                }
-                employees.append(employee)
+            for doc in self.collection.find(query):
+                employees.append({
+                    "employee_id": doc["employee_id"],
+                    "name": doc["name"],
+                    "photo_path": doc["photo_path"],
+                    "active": doc["active"],
+                    "created_at": doc["created_at"].isoformat()
+                })
                 
-            logger.info(f"Listados {len(employees)} funcionários")
+            print(f"✓ {len(employees)} funcionários encontrados")
             return employees
             
         except Exception as e:
-            logger.error(f"Erro ao listar funcionários: {str(e)}")
-            return []
+            print(f"✗ Erro ao listar funcionários: {e}")
+            raise
 
-    def update(self, employee_id: str, data: Dict) -> bool:
-        """
-        Atualiza dados do funcionário
-        Args:
-            employee_id: ID do funcionário
-            data: Campos a atualizar
-        Returns:
-            bool: True se atualizado com sucesso
-        """
+    def update(self, employee_id: str, data: dict) -> bool:
+        """Atualiza funcionário"""
         try:
-            if "photo_path" in data:
+            # Processar foto se enviada
+            if "photo" in data:
+                # Criar diretório se não existir
+                employee_dir = os.path.join(EMPLOYEES_DIR, employee_id)
+                os.makedirs(employee_dir, exist_ok=True)
+                
                 # Salvar nova foto
-                new_photo_path = self._save_photo(data["photo_path"], employee_id)
+                photo_path = os.path.join(employee_dir, "photo.jpg")
+                with open(photo_path, "wb") as f:
+                    f.write(data.pop("photo"))
+                data["photo_path"] = photo_path
                 
-                # Processar nova foto facial
-                face_encoding, face_location, face_image = self._process_face_image(new_photo_path)
-                
-                # Remover foto antiga
-                old_employee = self.get(employee_id)
-                if old_employee and 'photo_path' in old_employee:
-                    try:
-                        os.remove(old_employee['photo_path'])
-                    except:
-                        pass
-                
-                # Atualizar dados faciais
-                data.update({
-                    "face_encoding": face_encoding.tolist(),
-                    "face_location": list(face_location),
-                    "photo_path": new_photo_path,
-                    "face_quality_score": np.mean(np.abs(face_encoding))
-                })
-                del data["photo_path"]
-
-            data["updated_at"] = datetime.now()
-            
+            # Atualizar no banco
             result = self.collection.update_one(
                 {"employee_id": employee_id},
                 {"$set": data}
@@ -220,32 +176,33 @@ class EmployeeCRUD:
             
             success = result.modified_count > 0
             if success:
-                logger.info(f"Funcionário {employee_id} atualizado")
+                print(f"✓ Funcionário {employee_id} atualizado")
+            else:
+                print(f"✗ Funcionário {employee_id} não encontrado")
+            
             return success
             
         except Exception as e:
-            logger.error(f"Erro ao atualizar funcionário: {str(e)}")
-            # Limpar nova foto em caso de erro
-            if 'new_photo_path' in locals():
-                try:
-                    os.remove(new_photo_path)
-                except:
-                    pass
-            return False
+            print(f"✗ Erro ao atualizar funcionário: {e}")
+            raise
 
     def delete(self, employee_id: str) -> bool:
-        """
-        Remove funcionário (soft delete)
-        Args:
-            employee_id: ID do funcionário
-        Returns:
-            bool: True se removido com sucesso
-        """
+        """Remove funcionário"""
         try:
-            result = self.update(employee_id, {"active": False})
-            if result:
-                logger.info(f"Funcionário {employee_id} desativado")
-            return result
+            # Buscar funcionário
+            result = self.collection.update_one(
+                {"employee_id": employee_id},
+                {"$set": {"active": False}}
+            )
+            
+            success = result.modified_count > 0
+            if success:
+                print(f"✓ Funcionário {employee_id} removido")
+            else:
+                print(f"✗ Funcionário {employee_id} não encontrado")
+            
+            return success
+            
         except Exception as e:
-            logger.error(f"Erro ao desativar funcionário: {str(e)}")
-            return False 
+            print(f"✗ Erro ao remover funcionário: {e}")
+            raise 

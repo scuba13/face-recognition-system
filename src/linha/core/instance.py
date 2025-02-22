@@ -12,6 +12,7 @@ _lock = Lock()
 # Instâncias globais
 _image_capture = None
 _face_processor = None
+_db_handler = None
 
 def set_image_capture(instance):
     """Define instância global do ImageCapture"""
@@ -34,6 +35,13 @@ def get_face_processor():
     """Retorna instância global do FaceProcessor"""
     with _lock:
         return _face_processor
+
+def get_db_handler():
+    return _db_handler
+
+def set_db_handler(handler):
+    global _db_handler
+    _db_handler = handler
 
 def save_backend_status(running=True):
     """Salva status do backend"""

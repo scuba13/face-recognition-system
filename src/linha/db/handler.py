@@ -2,13 +2,14 @@ from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 import logging
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import backoff
 from linha.config.settings import (
     MONGODB_URI,
     MONGODB_DB,
     BATCH_LOCK_TIMEOUT
 )
+from linha.db.crud.employee import EmployeeCRUD
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,10 @@ class MongoDBHandler:
         self.client = MongoClient(connection_string)
         self.db = self.client[MONGODB_DB]
         self._setup_collections()
+        
+        # Criar instância do CRUD de funcionários
+        self.employee_crud = EmployeeCRUD(self)
+        
         logger.info("Conexão com MongoDB estabelecida")
         
     def _setup_collections(self):
@@ -53,16 +58,47 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Erro ao registrar lote: {str(e)}")
 
-    def get_pending_batches(self, line_id: str):
-        """Recupera lotes pendentes para processamento"""
+    def get_pending_batches(self, line_id: str = None):
+        """
+        Recupera lotes pendentes para processamento
+        Args:
+            line_id: ID da linha (opcional)
+        """
         try:
-            return list(self.batch_control.find({
-                'line_id': line_id,
+            query = {
                 'status': 'pending',
                 'processor_id': None  # Apenas lotes não atribuídos
-            }).limit(10))  # Limitar quantidade por vez
+            }
+            
+            # Adicionar line_id ao query se fornecido
+            if line_id:
+                query['line_id'] = line_id
+                
+            return list(self.batch_control.find(query).limit(10))
         except Exception as e:
             logger.error(f"Erro ao buscar lotes pendentes: {str(e)}")
+            return []
+
+    def get_processing_batches(self, line_id: str = None):
+        """Retorna lotes em processamento"""
+        try:
+            query = {'status': 'processing'}
+            if line_id:
+                query['line_id'] = line_id
+            return list(self.batch_control.find(query))
+        except Exception as e:
+            logger.error(f"Erro ao buscar lotes em processamento: {str(e)}")
+            return []
+
+    def get_completed_batches(self, line_id: str = None):
+        """Retorna lotes completados"""
+        try:
+            query = {'status': 'completed'}
+            if line_id:
+                query['line_id'] = line_id
+            return list(self.batch_control.find(query))
+        except Exception as e:
+            logger.error(f"Erro ao buscar lotes completados: {str(e)}")
             return []
 
     def update_batch_status(self, batch_path: str, status: str, error_message: str = None):
@@ -98,7 +134,10 @@ class MongoDBHandler:
             min_distance = float('inf')
             
             for emp in employees:
-                stored_encoding = np.array(emp['encoding'])
+                if 'face_encoding' not in emp:
+                    continue
+                
+                stored_encoding = np.array(emp['face_encoding'])
                 distance = np.linalg.norm(face_encoding - stored_encoding)
                 
                 if distance < min_distance and distance <= tolerance:
@@ -125,4 +164,34 @@ class MongoDBHandler:
             return employees
         except Exception as e:
             logger.error(f"Erro ao listar funcionários: {str(e)}")
+            return [] 
+
+    def get_recent_detections(self, line_id: str = None, days: int = 7):
+        """
+        Retorna detecções recentes
+        Args:
+            line_id: ID da linha (opcional)
+            days: Número de dias para buscar (default 7)
+        """
+        try:
+            # Calcular data limite
+            date_limit = datetime.now() - timedelta(days=days)
+            
+            # Construir query
+            query = {
+                'timestamp': {'$gte': date_limit}
+            }
+            if line_id:
+                query['line_id'] = line_id
+            
+            # Buscar detecções ordenadas por data
+            detections = self.detections.find(
+                query,
+                sort=[('timestamp', -1)]  # Mais recentes primeiro
+            )
+            
+            return list(detections)
+            
+        except Exception as e:
+            logger.error(f"Erro ao buscar detecções recentes: {str(e)}")
             return [] 

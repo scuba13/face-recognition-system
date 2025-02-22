@@ -1,7 +1,7 @@
 import cv2
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from threading import Thread, Lock
 
@@ -24,6 +24,12 @@ class ImageCapture:
         self.db_handler = None
         self.batch_dirs = {}  # {line_id: (dir, minute, image_count, start_time)}
         self.lock = Lock()
+        
+        # Adicionar dicionários para controle
+        self.last_capture_time = {}  # Última captura por câmera
+        self.frames_count = {}       # Contador de frames
+        self.fps_stats = {}          # Estatísticas de FPS
+        self.last_fps_update = {}    # Última atualização do FPS
 
     def set_db_handler(self, db_handler):
         self.db_handler = db_handler
@@ -31,12 +37,15 @@ class ImageCapture:
     def start_capture(self):
         """Inicia captura em todas as câmeras"""
         logger.info("Iniciando sistema de captura...")
+        logger.info(f"Linhas configuradas: {self.production_lines}")
+        
         self.running = True
         
         # Inicializar todas as câmeras primeiro
         for line_id, cameras in self.production_lines.items():
             for camera_config in cameras:
                 camera_key = f"{line_id}_usb_{camera_config['id']}"
+                logger.info(f"Tentando inicializar câmera: {camera_key}")
                 
                 # Inicializar câmera apenas se não existir
                 if camera_key not in self.cameras:
@@ -53,6 +62,15 @@ class ImageCapture:
                         thread.daemon = True
                         self.capture_threads.append(thread)
                         thread.start()
+                        logger.info(f"Thread de captura iniciada para câmera {camera_key}")
+                    else:
+                        logger.error(f"Falha ao inicializar câmera {camera_key}")
+
+        # Inicializar contadores
+        for camera_id in self.cameras:
+            self.frames_count[camera_id] = 0
+            self.fps_stats[camera_id] = 0
+            self.last_fps_update[camera_id] = datetime.now()
 
     def _get_or_create_batch_dir(self, line_id, minute_str):
         """Obtém ou cria diretório do lote de forma thread-safe"""
@@ -131,6 +149,10 @@ class ImageCapture:
                     # Incrementar contador do lote
                     self._increment_batch_count(line_id)
 
+                    # Atualizar contadores
+                    self.last_capture_time[camera_key] = now.isoformat()
+                    self.frames_count[camera_key] = self.frames_count.get(camera_key, 0) + 1
+
                     time.sleep(self.interval)
                     
                 except Exception as e:
@@ -194,4 +216,201 @@ class ImageCapture:
         
         self.cameras.clear()
         self.capture_threads.clear()
-        logger.info("Captura finalizada") 
+        logger.info("Captura finalizada")
+
+    @property
+    def is_capturing(self) -> bool:
+        """Verifica se o sistema está capturando imagens"""
+        try:
+            # Sistema precisa estar rodando
+            if not self.running:
+                logger.info("Sistema não está rodando (self.running=False)")
+                return False
+            
+            # Verificar se tem câmeras configuradas
+            if not self.cameras:
+                logger.info("Nenhuma câmera configurada (self.cameras vazio)")
+                return False
+            
+            # Log das câmeras ativas
+            logger.info(f"Câmeras configuradas: {list(self.cameras.keys())}")
+            
+            # Verificar se pelo menos uma câmera está ativa
+            active_cameras = False
+            for line_id, cameras in self.production_lines.items():
+                for cam in cameras:
+                    is_active = self.is_camera_active(line_id, cam['id'])
+                    logger.info(f"Status câmera {line_id}_{cam['id']}: {'Ativa' if is_active else 'Inativa'}")
+                    if is_active:
+                        active_cameras = True
+                        break
+                if active_cameras:
+                    break
+            
+            if not active_cameras:
+                logger.info("Nenhuma câmera ativa encontrada")
+                return False
+            
+            # Verificar se está gerando imagens
+            now = datetime.now()
+            current_minute = now.strftime("%Y%m%d_%H%M")
+            dir_path = os.path.join(BASE_IMAGE_DIR, line_id, current_minute)
+            
+            logger.info(f"Verificando diretório: {dir_path}")
+            
+            if not os.path.exists(dir_path):
+                logger.info(f"Diretório não existe: {dir_path}")
+                return False
+            
+            # Verificar se tem imagens recentes
+            files = [f for f in os.listdir(dir_path) if f.endswith('.jpg')]
+            logger.info(f"Total de imagens encontradas: {len(files)}")
+            
+            if not files:
+                logger.info("Nenhuma imagem encontrada")
+                return False
+            
+            latest_file = max(files, key=lambda x: os.path.getmtime(os.path.join(dir_path, x)))
+            latest_time = os.path.getmtime(os.path.join(dir_path, latest_file))
+            time_diff = time.time() - latest_time
+            
+            logger.info(f"Última imagem: {latest_file}")
+            logger.info(f"Tempo desde última imagem: {time_diff:.1f} segundos")
+            
+            return time_diff < 10
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar status de captura: {str(e)}")
+            return False
+
+    def is_camera_active(self, line_id: str, camera_id: str) -> bool:
+        """Verifica se uma câmera específica está ativa e capturando"""
+        try:
+            camera_key = f"{line_id}_usb_{camera_id}"
+            logger.info(f"\nVerificando câmera {camera_key}:")
+            
+            if camera_key not in self.cameras:
+                logger.info(f"Câmera {camera_key} não encontrada em self.cameras")
+                return False
+            
+            camera = self.cameras[camera_key]
+            
+            # Verificar se câmera está aberta
+            is_opened = camera.isOpened()
+            logger.info(f"Câmera aberta: {is_opened}")
+            if not is_opened:
+                return False
+            
+            # Tentar capturar um frame
+            ret, _ = camera.read()
+            logger.info(f"Captura de frame: {'Sucesso' if ret else 'Falha'}")
+            if not ret:
+                return False
+            
+            # Verificar arquivos recentes
+            now = datetime.now()
+            current_minute = now.strftime("%Y%m%d_%H%M")
+            last_minute = (now - timedelta(minutes=1)).strftime("%Y%m%d_%H%M")
+            
+            for minute in [current_minute, last_minute]:
+                dir_path = os.path.join(BASE_IMAGE_DIR, line_id, minute)
+                logger.info(f"Verificando diretório: {dir_path}")
+                
+                if os.path.exists(dir_path):
+                    camera_files = [f for f in os.listdir(dir_path) 
+                                  if f.startswith(f"{camera_id}_") and 
+                                  f.endswith('.jpg')]
+                    logger.info(f"Arquivos encontrados: {len(camera_files)}")
+                    
+                    if camera_files:
+                        latest_file = max(camera_files, 
+                            key=lambda x: os.path.getmtime(os.path.join(dir_path, x)))
+                        latest_time = os.path.getmtime(os.path.join(dir_path, latest_file))
+                        time_diff = time.time() - latest_time
+                        
+                        logger.info(f"Última imagem: {latest_file}")
+                        logger.info(f"Tempo desde última imagem: {time_diff:.1f} segundos")
+                        
+                        if time_diff < 10:
+                            return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar status da câmera {line_id}_{camera_id}: {str(e)}")
+            return False
+
+    def get_camera_fps(self, camera_id: str) -> float:
+        """Retorna FPS atual da câmera"""
+        try:
+            if camera_id not in self.cameras:
+                return 0.0
+                
+            now = datetime.now()
+            last_update = self.last_fps_update.get(camera_id)
+            
+            # Atualizar FPS a cada segundo
+            if not last_update or (now - last_update).total_seconds() >= 1.0:
+                frames = self.frames_count.get(camera_id, 0)
+                self.fps_stats[camera_id] = frames
+                self.frames_count[camera_id] = 0
+                self.last_fps_update[camera_id] = now
+                
+            return self.fps_stats.get(camera_id, 0)
+            
+        except Exception as e:
+            logger.error(f"Erro ao calcular FPS: {str(e)}")
+            return 0.0
+
+    def get_capture_status(self) -> dict:
+        """Retorna status detalhado do sistema de captura"""
+        print("\n=== BACKEND: Recebida solicitação de status ===")  # Log direto
+        try:
+            status = {
+                'system_running': self.running,
+                'cameras_configured': bool(self.cameras),
+                'cameras': {},
+                'is_capturing': False
+            }
+            
+            print(f"Running: {self.running}")  # Log direto
+            print(f"Câmeras: {list(self.cameras.keys())}")  # Log direto
+            
+            # Status por câmera
+            for line_id, cameras in self.production_lines.items():
+                for cam in cameras:
+                    camera_key = f"{line_id}_usb_{cam['id']}"
+                    camera_status = {
+                        'name': cam['name'],
+                        'position': cam['position'],
+                        'is_configured': camera_key in self.cameras,
+                        'is_opened': False,
+                        'can_capture': False
+                    }
+                    
+                    if camera_key in self.cameras:
+                        camera = self.cameras[camera_key]
+                        camera_status['is_opened'] = camera.isOpened()
+                        if camera_status['is_opened']:
+                            ret, _ = camera.read()
+                            camera_status['can_capture'] = ret
+                    
+                    status['cameras'][camera_key] = camera_status
+                    print(f"Câmera {camera_key}: {camera_status}")  # Log direto
+            
+            status['is_capturing'] = any(
+                cam['can_capture'] for cam in status['cameras'].values()
+            )
+            
+            print(f"Status final: {status}")  # Log direto
+            return status
+            
+        except Exception as e:
+            print(f"Erro ao obter status: {str(e)}")  # Log direto
+            return {
+                'system_running': False,
+                'cameras_configured': False,
+                'cameras': {},
+                'is_capturing': False,
+                'error': str(e)
+            } 

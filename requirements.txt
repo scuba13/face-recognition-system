@@ -1,11 +1,25 @@
-dlib==19.24.2
-face-recognition==1.3.0
-face-recognition-models
-opencv-python==4.8.1.78
+# API
+fastapi==0.109.0
+python-multipart==0.0.6  # Para upload de arquivos
+uvicorn==0.27.0
+
+# Interface
+streamlit==1.29.0
+Pillow==10.1.0
+
+# Banco de dados
 pymongo==4.6.1
+
+# Processamento de imagens
+face-recognition==1.3.0
+opencv-python==4.8.1.78
 numpy==1.26.3
+
+# Utilitários
+python-dotenv==1.0.0
+colorlog==6.8.0
+requests==2.31.0
+
 psutil==5.9.8
 backoff==2.2.1
-requests==2.31.0
-python-dotenv==1.0.0
 colorama==0.4.6 

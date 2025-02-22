@@ -9,6 +9,8 @@ from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES
 from linha.db.models import BatchDetection  # Importar o modelo
 import shutil  # Adicionar import
 import cv2  # Adicionar import para cv2
+from concurrent.futures import ThreadPoolExecutor
+import gc  # Para garbage collection
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ class FaceProcessor:
         self.db_handler = db_handler
         self.running = True
         self.tolerance = FACE_RECOGNITION_TOLERANCE
+        self.max_workers = 4  # Número de threads para processamento paralelo
 
     def start_processing(self):
         """Inicia o processamento de lotes"""
@@ -38,8 +41,58 @@ class FaceProcessor:
                 logger.error(f"Erro no loop de processamento: {str(e)}")
                 time.sleep(5)
 
+    def process_image(self, image_path):
+        """Processa uma única imagem"""
+        try:
+            # Carregar e redimensionar imagem
+            image = cv2.imread(image_path)
+            if image is None:
+                return None
+                
+            # Redimensionar mantendo proporção
+            height, width = image.shape[:2]
+            max_dimension = 800
+            
+            if height > max_dimension or width > max_dimension:
+                scale = max_dimension / max(height, width)
+                image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+            
+            # Converter para RGB
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            # Detectar e processar faces
+            face_locations = face_recognition.face_locations(image, model="hog")
+            
+            if not face_locations:
+                return None
+                
+            face_encodings = face_recognition.face_encodings(
+                image, 
+                face_locations,
+                num_jitters=1
+            )
+            
+            results = []
+            for face_encoding in face_encodings:
+                match = self.db_handler.find_matching_face(
+                    face_encoding, 
+                    tolerance=self.tolerance
+                )
+                if match:
+                    results.append(match)
+            
+            # Liberar memória
+            del image
+            gc.collect()
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Erro ao processar imagem {image_path}: {str(e)}")
+            return None
+
     def process_batch(self, batch):
-        """Processa um lote de imagens"""
+        """Processa um lote de imagens em paralelo"""
         batch_path = batch['batch_path']
         line_id = batch_path.split('captured_images/')[1].split('/')[0]
         
@@ -49,53 +102,25 @@ class FaceProcessor:
             total_faces_unknown = 0
             detections = {}
             start_time = datetime.now()
-            batch_detections = []  # Lista para bulk insert
             
             image_files = [f for f in os.listdir(batch_path) 
                           if f.endswith(('.jpg', '.jpeg', '.png'))]
             
-            for image_file in image_files:
-                image_path = os.path.join(batch_path, image_file)
-                total_images += 1
+            # Processar imagens em paralelo
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = []
+                for image_file in image_files:
+                    image_path = os.path.join(batch_path, image_file)
+                    futures.append(executor.submit(self.process_image, image_path))
                 
-                try:
-                    # Carregar e redimensionar imagem
-                    image = cv2.imread(image_path)
-                    if image is None:
-                        continue
-                        
-                    # Redimensionar mantendo proporção
-                    height, width = image.shape[:2]
-                    max_dimension = 800  # Limitar tamanho máximo
-                    
-                    if height > max_dimension or width > max_dimension:
-                        scale = max_dimension / max(height, width)
-                        image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
-                    
-                    # Converter para RGB (face_recognition usa RGB)
-                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    
-                    # Detectar faces
-                    face_locations = face_recognition.face_locations(
-                        image,
-                        model="hog"  # Usar CNN se GPU disponível
-                    )
-                    total_faces_detected += len(face_locations)
-                    
-                    if face_locations:
-                        # Processar faces em batch
-                        face_encodings = face_recognition.face_encodings(
-                            image, 
-                            face_locations,
-                            num_jitters=1  # Aumentar para mais precisão
-                        )
-                        
-                        for face_encoding in face_encodings:
-                            result = self.db_handler.find_matching_face(
-                                face_encoding, 
-                                tolerance=self.tolerance
-                            )
-                            
+                total_images = len(image_files)
+                
+                # Coletar resultados
+                for future in futures:
+                    results = future.result()
+                    if results:
+                        for result in results:
+                            total_faces_detected += 1
                             if result:
                                 employee_id = result['employee_id']
                                 name = result['name']
@@ -111,22 +136,18 @@ class FaceProcessor:
                                 detections[employee_id]['confidence_sum'] += result['confidence']
                             else:
                                 total_faces_unknown += 1
-                
-                except Exception as e:
-                    logger.error(f"Erro ao processar imagem {image_path}: {str(e)}")
-                    continue
             
+            # Criar BatchDetection e registrar
             timestamp_str = batch_path.split('/')[-1]
             capture_datetime = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
-
-            # Criar objeto BatchDetection usando o processor_id do lote
+            
             batch_detection = BatchDetection(
                 line_id=line_id,
                 batch_path=batch_path,
                 timestamp=datetime.now(),
                 capture_datetime=capture_datetime,
                 processed_at=datetime.now(),
-                processor_id=batch['processor_id'],  # Usar o ID do lote ao invés do ID do processador
+                processor_id=batch['processor_id'],
                 total_images=total_images,
                 processing_time=(datetime.now() - start_time).total_seconds(),
                 total_faces_detected=total_faces_detected,
@@ -145,20 +166,24 @@ class FaceProcessor:
                 ]
             )
             
+            # Registrar e limpar
             self.db_handler.register_batch_detection(batch_detection)
             self.db_handler.update_batch_status(batch_path, 'completed')
             
+            # Log do resumo
             logger.info(f"Resumo do lote {batch_path}:")
             logger.info(f"- Total de imagens: {total_images}")
             logger.info(f"- Faces detectadas: {total_faces_detected}")
             logger.info(f"- Faces reconhecidas: {batch_detection.total_faces_recognized}")
             
-            # Remover diretório do lote após processamento
+            # Limpar arquivos e memória
             try:
                 shutil.rmtree(batch_path)
                 logger.info(f"✨ Lote removido: {batch_path}")
             except Exception as e:
                 logger.warning(f"Não foi possível remover o lote {batch_path}: {str(e)}")
+            
+            gc.collect()  # Forçar garbage collection
             
         except Exception as e:
             logger.error(f"Erro ao processar lote {batch_path}: {str(e)}")

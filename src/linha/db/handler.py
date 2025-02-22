@@ -10,6 +10,8 @@ from linha.config.settings import (
     BATCH_LOCK_TIMEOUT
 )
 from linha.db.crud.employee import EmployeeCRUD
+import os
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,10 @@ class MongoDBHandler:
         self.client = MongoClient(connection_string)
         self.db = self.client[MONGODB_DB]
         self._setup_collections()
+        
+        # Gerar ID único para este processador
+        self.processor_id = str(uuid.uuid4())
+        logger.info(f"ID do processador: {self.processor_id}")
         
         # Criar instância do CRUD de funcionários
         self.employee_crud = EmployeeCRUD(self)
@@ -50,7 +56,7 @@ class MongoDBHandler:
                 'batch_path': batch_path,
                 'created_at': datetime.now(),
                 'status': 'pending',
-                'processor_id': None,
+                'processor_id': None,  # Será definido quando o lote for pego para processamento
                 'processed_at': None,
                 'error_message': None
             })
@@ -59,11 +65,7 @@ class MongoDBHandler:
             logger.error(f"Erro ao registrar lote: {str(e)}")
 
     def get_pending_batches(self, line_id: str = None):
-        """
-        Recupera lotes pendentes para processamento
-        Args:
-            line_id: ID da linha (opcional)
-        """
+        """Recupera lotes pendentes para processamento"""
         try:
             query = {
                 'status': 'pending',
@@ -74,7 +76,23 @@ class MongoDBHandler:
             if line_id:
                 query['line_id'] = line_id
                 
-            return list(self.batch_control.find(query).limit(10))
+            # Buscar lotes pendentes
+            batches = list(self.batch_control.find(query).limit(10))
+            
+            # Atualizar processor_id dos lotes encontrados
+            if batches:
+                batch_paths = [b['batch_path'] for b in batches]
+                self.batch_control.update_many(
+                    {'batch_path': {'$in': batch_paths}},
+                    {
+                        '$set': {
+                            'processor_id': self.processor_id,
+                            'status': 'processing'
+                        }
+                    }
+                )
+            
+            return batches
         except Exception as e:
             logger.error(f"Erro ao buscar lotes pendentes: {str(e)}")
             return []

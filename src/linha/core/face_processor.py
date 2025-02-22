@@ -5,12 +5,13 @@ import numpy as np
 from datetime import datetime
 import time
 from threading import Thread
-from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES
+from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES, ENABLE_PREPROCESSING
 from linha.db.models import BatchDetection  # Importar o modelo
 import shutil  # Adicionar import
 import cv2  # Adicionar import para cv2
 from concurrent.futures import ThreadPoolExecutor
 import gc  # Para garbage collection
+from linha.utils.image_preprocessing import ImagePreprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +45,21 @@ class FaceProcessor:
     def process_image(self, image_path):
         """Processa uma única imagem"""
         try:
-            # Carregar e redimensionar imagem
+            # Carregar imagem
             image = cv2.imread(image_path)
             if image is None:
                 return None
-                
-            # Redimensionar mantendo proporção
+            
+            # Redimensionar se necessário
             height, width = image.shape[:2]
             max_dimension = 800
-            
             if height > max_dimension or width > max_dimension:
                 scale = max_dimension / max(height, width)
                 image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+            
+            # Aplicar pré-processamento se habilitado
+            if ENABLE_PREPROCESSING:
+                image = ImagePreprocessor.enhance_image(image)
             
             # Converter para RGB
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -155,6 +159,7 @@ class FaceProcessor:
                 total_faces_unknown=total_faces_unknown,
                 unique_people_recognized=len([d for d in detections.values() if d['count'] > 0]),
                 unique_people_unknown=total_faces_unknown,
+                preprocessing_enabled=ENABLE_PREPROCESSING,
                 detections=[
                     {
                         'employee_id': emp_id,

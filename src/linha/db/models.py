@@ -33,6 +33,27 @@ class BatchDetection:
     unique_people_recognized: int
     unique_people_unknown: int
     detections: List[Dict]
+    preprocessing_enabled: bool = False
+
+    def __init__(self, line_id, batch_path, timestamp, capture_datetime, processed_at,
+                 processor_id, total_images, processing_time, total_faces_detected,
+                 total_faces_recognized, total_faces_unknown, unique_people_recognized,
+                 unique_people_unknown, detections, preprocessing_enabled=False):
+        self.line_id = line_id
+        self.batch_path = batch_path
+        self.timestamp = timestamp
+        self.capture_datetime = capture_datetime
+        self.processed_at = processed_at
+        self.processor_id = processor_id
+        self.total_images = total_images
+        self.processing_time = processing_time
+        self.total_faces_detected = total_faces_detected
+        self.total_faces_recognized = total_faces_recognized
+        self.total_faces_unknown = total_faces_unknown
+        self.unique_people_recognized = unique_people_recognized
+        self.unique_people_unknown = unique_people_unknown
+        self.detections = detections
+        self.preprocessing_enabled = preprocessing_enabled
 
     def to_dict(self) -> Dict:
         return {
@@ -49,5 +70,6 @@ class BatchDetection:
             'total_faces_unknown': self.total_faces_unknown,
             'unique_people_recognized': self.unique_people_recognized,
             'unique_people_unknown': self.unique_people_unknown,
+            'preprocessing_enabled': self.preprocessing_enabled,
             'detections': self.detections
         } 

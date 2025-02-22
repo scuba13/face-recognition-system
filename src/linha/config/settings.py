@@ -59,4 +59,5 @@ FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.6'
 MIN_BLUR_THRESHOLD = float(os.getenv('MIN_BLUR_THRESHOLD', '100'))
 
 # Face Detection
-FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU 
+FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU
+ENABLE_PREPROCESSING = bool(os.getenv('ENABLE_PREPROCESSING', 'True'))  # Flag para controlar pré-processamento

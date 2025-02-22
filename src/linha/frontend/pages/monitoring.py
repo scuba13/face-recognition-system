@@ -116,6 +116,33 @@ def render_monitoring_page(api_client):
                         help="Total de faces que não foram reconhecidas"
                     )
                 
+                # Status do processamento
+                col1, col2, col3, col4 = st.columns(4)  # Agora 4 colunas
+                with col1:
+                    st.metric(
+                        "Lotes Pendentes",
+                        processor_status['pending_batches'],
+                        help="Lotes aguardando processamento"
+                    )
+                with col2:
+                    st.metric(
+                        "Lotes Processando",
+                        processor_status['processing_batches'],
+                        help="Lotes em processamento"
+                    )
+                with col3:
+                    st.metric(
+                        "Lotes Completados",
+                        processor_status['completed_batches'],
+                        help="Total de lotes processados"
+                    )
+                with col4:
+                    st.metric(
+                        "Lotes com Erro",
+                        processor_status['error_batches'],
+                        help="Lotes que falharam no processamento"
+                    )
+                
                 # Segunda linha de métricas
                 col1, col2 = st.columns(2)
                 with col1:

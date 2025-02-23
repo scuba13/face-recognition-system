@@ -255,87 +255,132 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Erro ao registrar detecções em batch: {str(e)}") 
 
-    def get_processor_statistics(self, days=1):
-        """Retorna estatísticas de processamento dos últimos X dias"""
+    def get_processor_statistics(self, hours=24):
+        """Retorna estatísticas de processamento das últimas X horas"""
         try:
-            print("\n=== Buscando estatísticas de processamento ===")
+            print(f"\n=== Buscando estatísticas de processamento (últimas {hours} horas) ===")
             
-            # Buscar dados dos últimos X dias
-            cutoff = datetime.now() - timedelta(days=days)
+            cutoff = datetime.now() - timedelta(hours=hours)
+            
+            # Pipeline para métricas gerais
             pipeline = [
-                {'$match': {'timestamp': {'$gte': cutoff}}},
-                {'$group': {
-                    '_id': None,
-                    'total_batches': {'$sum': 1},
-                    'total_time': {'$sum': '$processing_time'},
-                    'total_faces': {'$sum': '$total_faces_detected'},
-                    'recognized_faces': {'$sum': '$total_faces_recognized'},
-                    'unknown_faces': {'$sum': '$total_faces_unknown'},
-                    'unique_people': {'$addToSet': '$detections.employee_id'},
-                    'avg_confidence': {'$avg': {'$arrayElemAt': ['$detections.average_confidence', 0]}}
-                }}
+                {
+                    '$match': {
+                        'processed_at': {'$gte': cutoff, '$lte': datetime.now()}
+                    }
+                },
+                {
+                    '$unwind': '$detections'  # Desagregar array de detections
+                },
+                {
+                    '$unwind': '$detections.matches'  # Desagregar matches onde está a distância
+                },
+                {
+                    '$group': {
+                        '_id': None,
+                        'total_batches': {'$sum': 1},
+                        'total_time': {'$sum': '$processing_time'},
+                        'total_faces_detected': {'$sum': '$total_faces_detected'},
+                        'total_faces_recognized': {'$sum': '$total_faces_recognized'},
+                        'total_faces_unknown': {'$sum': '$total_faces_unknown'},
+                        'avg_distance': {'$avg': '$detections.matches.distance'}  # Campo correto da distância
+                    }
+                }
             ]
             
-            result = list(self.detections.aggregate(pipeline))
-            print(f"Resultado agregação: {result}")
+            # Pipeline para estatísticas por hora
+            hourly_pipeline = [
+                {
+                    '$match': {
+                        'processed_at': {'$gte': cutoff, '$lte': datetime.now()}
+                    }
+                },
+                {
+                    '$group': {
+                        '_id': {
+                            '$dateToString': {
+                                'format': '%Y-%m-%d %H:00',
+                                'date': '$processed_at'
+                            }
+                        },
+                        'total_batches': {'$sum': 1},
+                        'total_faces': {'$sum': '$total_faces_detected'}
+                    }
+                },
+                {'$sort': {'_id': 1}}
+            ]
             
-            # Buscar últimos 50 registros para histórico
-            history = list(self.detections.find(
-                {},
-                {'timestamp': 1, 'processing_time': 1, 'total_faces_detected': 1, 'total_faces_recognized': 1},
-                sort=[('timestamp', -1)],
-                limit=50
-            ))
+            # Executar pipelines
+            result = list(self.detections.aggregate(pipeline))
+            hourly_stats = list(self.detections.aggregate(hourly_pipeline))
             
             # Buscar contagens de lotes
-            pending = len(self.get_pending_batches())
-            processing = len(self.get_processing_batches())
+            batch_counts = {
+                'pending': self.batch_control.count_documents({
+                    'status': 'pending',
+                    'created_at': {'$gte': cutoff, '$lte': datetime.now()}
+                }),
+                'processing': self.batch_control.count_documents({
+                    'status': 'processing',
+                    'created_at': {'$gte': cutoff, '$lte': datetime.now()}
+                }),
+                'completed': self.batch_control.count_documents({
+                    'status': 'completed',
+                    'processed_at': {'$gte': cutoff, '$lte': datetime.now()}
+                }),
+                'error': self.batch_control.count_documents({
+                    'status': 'error',
+                    'processed_at': {'$gte': cutoff, '$lte': datetime.now()}
+                })
+            }
             
+            # Formatar resposta
             if result:
                 metrics = result[0]
-                total_batches = metrics['total_batches']
-                
                 stats = {
-                    'running': True,
-                    'pending_batches': pending,
-                    'processing_batches': processing,
-                    'completed_batches': total_batches,
-                    'avg_processing_time': metrics['total_time'] / total_batches,
-                    'total_faces_detected': metrics['total_faces'],
-                    'total_faces_recognized': metrics['recognized_faces'],
-                    'total_faces_unknown': metrics['unknown_faces'],
-                    'recognition_rate': metrics['recognized_faces'] / metrics['total_faces'] if metrics['total_faces'] > 0 else 0,
-                    'unique_people_recognized': len(metrics['unique_people']),
-                    'avg_confidence': metrics['avg_confidence'] or 0,
-                    'processing_history': [
+                    'avg_processing_time': metrics['total_time'] / metrics['total_batches'] if metrics['total_batches'] > 0 else 0,
+                    'total_faces_detected': metrics['total_faces_detected'],
+                    'total_faces_recognized': metrics['total_faces_recognized'],
+                    'total_faces_unknown': metrics['total_faces_unknown'],
+                    'avg_distance': metrics['avg_distance'] or 0,
+                    'pending_batches': batch_counts['pending'],
+                    'processing_batches': batch_counts['processing'],
+                    'completed_batches': batch_counts['completed'],
+                    'error_batches': batch_counts['error'],
+                    'hourly_stats': [
                         {
-                            'timestamp': h['timestamp'].isoformat(),
-                            'processing_time': h['processing_time'],
-                            'faces_detected': h['total_faces_detected'],
-                            'faces_recognized': h['total_faces_recognized']
+                            'datetime': stat['_id'],
+                            'total_batches': stat['total_batches'],
+                            'total_faces': stat['total_faces']
                         }
-                        for h in history
+                        for stat in hourly_stats
                     ]
                 }
             else:
                 stats = {
-                    'running': True,
-                    'pending_batches': pending,
-                    'processing_batches': processing,
-                    'completed_batches': 0,
                     'avg_processing_time': 0,
                     'total_faces_detected': 0,
                     'total_faces_recognized': 0,
                     'total_faces_unknown': 0,
-                    'recognition_rate': 0,
-                    'unique_people_recognized': 0,
-                    'avg_confidence': 0,
-                    'processing_history': []
+                    'avg_distance': 0,
+                    'pending_batches': batch_counts['pending'],
+                    'processing_batches': batch_counts['processing'],
+                    'completed_batches': batch_counts['completed'],
+                    'error_batches': batch_counts['error'],
+                    'hourly_stats': []
                 }
                 
-            # print(f"Estatísticas calculadas: {stats}")
             return stats
             
         except Exception as e:
             print(f"ERRO ao calcular estatísticas: {str(e)}")
             return {'error': str(e)} 
+
+    # Verificar estrutura dos dados
+    def check_detection_structure(self):
+        sample = list(self.detections.find().limit(1))
+        if sample:
+            print("\nEstrutura de uma detecção:")
+            print(f"Keys: {list(sample[0].keys())}")
+            if 'detections' in sample[0]:
+                print(f"Detections: {sample[0]['detections']}") 

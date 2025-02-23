@@ -48,66 +48,30 @@ def get_cameras_status():
         }
 
 @router.get("/processor/status")
-def get_processor_status():
+def get_processor_status(hours: int = 24):  # Default 24h
     """Retorna métricas do processador"""
     try:
-        print("\n=== API: Status do Processador ===")
+        print(f"\n=== API: Status do Processador (últimas {hours} horas) ===")
         
-        # Get instances
+        # Get instance
         db_handler = get_db_handler()
-        face_processor = get_face_processor()
         
-        # Buscar estatísticas do MongoDB
-        stats = db_handler.get_processor_statistics()
-        history = stats.get('processing_history', [])
-        
-        # Somar totais do histórico
-        total_faces = sum(batch.get('faces_detected', 0) for batch in history)
-        total_recognized = sum(batch.get('faces_recognized', 0) for batch in history)
-        total_unknown = sum(batch.get('faces_unknown', 0) for batch in history)
-        
-        # Status dos lotes
-        batch_counts = {
-            'pending': 0,
-            'processing': 0,
-            'completed': 0,
-            'error': 0
-        }
-        
-        for batch in db_handler.db.batch_control.find():
-            status = batch.get('status')
-            if status in batch_counts:
-                batch_counts[status] += 1
-        
-        # Agrupar processamentos por hora
-        hourly_stats = {}
-        for batch in history:
-            hour = datetime.fromisoformat(batch['timestamp']).strftime("%H:00")
-            if hour not in hourly_stats:
-                hourly_stats[hour] = {'total': 0, 'faces': 0}
-            hourly_stats[hour]['total'] += 1
-            hourly_stats[hour]['faces'] += batch.get('faces_detected', 0)
+        # Buscar todas as métricas direto do MongoDB com filtro de horas
+        stats = db_handler.get_processor_statistics(hours=hours)
         
         # Formatar resposta
         response = {
-            'avg_processing_time': stats.get('avg_processing_time', 0),
-            'total_faces_detected': total_faces,
-            'total_faces_recognized': total_recognized,
-            'total_faces_unknown': total_unknown,
-            'avg_distance': stats.get('avg_confidence', 0),
+            'avg_processing_time': stats['avg_processing_time'],
+            'total_faces_detected': stats['total_faces_detected'],
+            'total_faces_recognized': stats['total_faces_recognized'], 
+            'total_faces_unknown': stats['total_faces_unknown'],
+            'avg_distance': stats['avg_distance'],
             'tolerance': FACE_RECOGNITION_TOLERANCE,
-            'pending_batches': batch_counts['pending'],
-            'processing_batches': batch_counts['processing'],
-            'completed_batches': batch_counts['completed'],
-            'error_batches': batch_counts['error'],
-            'hourly_stats': [
-                {
-                    'hour': hour,
-                    'total_batches': data['total'],
-                    'total_faces': data['faces']
-                }
-                for hour, data in hourly_stats.items()
-            ]
+            'pending_batches': stats['pending_batches'],
+            'processing_batches': stats['processing_batches'],
+            'completed_batches': stats['completed_batches'],
+            'error_batches': stats['error_batches'],
+            'hourly_stats': stats['hourly_stats']
         }
         
         print(f"Métricas calculadas: {response}")

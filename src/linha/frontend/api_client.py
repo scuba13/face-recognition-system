@@ -33,13 +33,16 @@ class APIClient:
             print(f"✗ Erro: {str(e)}")
             return {'error': str(e)}
             
-    def get_processor_status(self) -> Dict:
+    def get_processor_status(self, hours: int = 24) -> Dict:
         """Retorna status do processador"""
         try:
             print(f"\nChamando GET {self.base_url}/processor/status")
-            response = requests.get(f"{self.base_url}/processor/status", timeout=5)
+            response = requests.get(
+                f"{self.base_url}/processor/status",
+                params={'hours': hours},
+                timeout=5
+            )
             data = response.json()
-            print(f"Resposta: {data}")
             return data
         except Exception as e:
             print(f"✗ Erro: {str(e)}")

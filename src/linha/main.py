@@ -2,8 +2,9 @@ import logging
 import os
 import time
 import uuid
-from threading import Thread
+from threading import Thread, Event
 from fastapi import FastAPI
+import threading
 
 from linha.core.face_processor import FaceProcessor
 from linha.core.image_capture import ImageCapture
@@ -26,34 +27,44 @@ def main():
         
         print("\n=== Iniciando Sistema ===")
         
-        # Inicializar conexão com banco
+        # 1. Inicializar conexão com banco primeiro
+        print("▶ Iniciando conexão com banco...")
         db_handler = MongoDBHandler()
+        print("✓ Banco conectado")
         
-        # Criar instâncias
+        # 2. Iniciar API em thread separada
+        print("▶ Iniciando servidor API...")
+        api_ready = Event()
+        api_thread = Thread(target=start_api_server, args=(api_ready,))
+        api_thread.daemon = True
+        api_thread.start()
+        
+        # Esperar API estar pronta
+        print("⌛ Aguardando API inicializar...")
+        api_ready.wait(timeout=10)  # Timeout de 10 segundos
+        if not api_ready.is_set():
+            raise Exception("Timeout ao iniciar API")
+        print("✓ Servidor API iniciado na porta 8000")
+        
+        # 3. Criar instâncias após banco e API estarem prontos
         image_capture = ImageCapture(
             production_lines=PRODUCTION_LINES,
             interval=CAPTURE_INTERVAL
         )
         face_processor = FaceProcessor(db_handler)
         
-        # Salvar globalmente
+        # 4. Salvar globalmente
         set_db_handler(db_handler)
         set_image_capture(image_capture)
         set_face_processor(face_processor)
         
-        # Iniciar captura primeiro
+        # 5. Iniciar captura
         print("▶ Iniciando captura de imagens...")
         image_capture.set_db_handler(db_handler)
         image_capture.start_capture()
         print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
         
-        # Iniciar API em thread separada
-        api_thread = Thread(target=start_api_server)
-        api_thread.daemon = True
-        api_thread.start()
-        print("✓ Servidor API iniciado na porta 8000")
-        
-        # Inicializar processador de faces
+        # 6. Inicializar processador de faces por último
         processor_thread = Thread(target=face_processor.start_processing)
         processor_thread.daemon = True
         processor_thread.start()

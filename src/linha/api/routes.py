@@ -48,7 +48,7 @@ def get_cameras_status():
         }
 
 @router.get("/processor/status")
-def get_processor_status(hours: int = 24):  # Default 24h
+def get_processor_status(hours: int = 24):
     """Retorna métricas do processador"""
     try:
         print(f"\n=== API: Status do Processador (últimas {hours} horas) ===")
@@ -62,6 +62,7 @@ def get_processor_status(hours: int = 24):  # Default 24h
         # Formatar resposta
         response = {
             'avg_processing_time': stats['avg_processing_time'],
+            'avg_images_per_batch': stats['avg_images_per_batch'],
             'total_faces_detected': stats['total_faces_detected'],
             'total_faces_recognized': stats['total_faces_recognized'], 
             'total_faces_unknown': stats['total_faces_unknown'],

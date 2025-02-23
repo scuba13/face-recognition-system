@@ -278,8 +278,9 @@ class MongoDBHandler:
                         'total_faces_detected': {'$sum': '$total_faces_detected'},
                         'total_faces_recognized': {'$sum': '$total_faces_recognized'},
                         'total_faces_unknown': {'$sum': '$total_faces_unknown'},
-                        'total_confidence': {'$sum': '$detections.average_confidence'},  # Campo correto
-                        'count_detections': {'$sum': 1}
+                        'total_confidence': {'$sum': '$detections.average_confidence'},
+                        'count_detections': {'$sum': 1},
+                        'total_images': {'$sum': '$total_images'}
                     }
                 }
             ]
@@ -335,6 +336,7 @@ class MongoDBHandler:
                 metrics = result[0]
                 stats = {
                     'avg_processing_time': metrics['total_time'] / metrics['total_batches'] if metrics['total_batches'] > 0 else 0,
+                    'avg_images_per_batch': metrics['total_images'] / metrics['total_batches'] if metrics['total_batches'] > 0 else 0,
                     'total_faces_detected': metrics['total_faces_detected'],
                     'total_faces_recognized': metrics['total_faces_recognized'],
                     'total_faces_unknown': metrics['total_faces_unknown'],
@@ -355,6 +357,7 @@ class MongoDBHandler:
             else:
                 stats = {
                     'avg_processing_time': 0,
+                    'avg_images_per_batch': 0,
                     'total_faces_detected': 0,
                     'total_faces_recognized': 0,
                     'total_faces_unknown': 0,

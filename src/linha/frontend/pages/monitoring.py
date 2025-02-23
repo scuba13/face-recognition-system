@@ -175,7 +175,7 @@ def render_processor_content(api_client):
         with metric_cols2[0]:
             st.metric("Distância", f"{processor_status['avg_distance']:.3f}")
         with metric_cols2[1]:
-            st.empty()  # Mantém o grid 2x2 mesmo com apenas 3 métricas
+            st.metric("Fotos/Lote", f"{processor_status['avg_images_per_batch']:.1f}")
 
     # Separador
     st.markdown("---")

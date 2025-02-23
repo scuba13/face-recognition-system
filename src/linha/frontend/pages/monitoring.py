@@ -11,11 +11,22 @@ logger = logging.getLogger(__name__)
 
 def render_cameras_content(api_client):
     """Conteúdo da tab de câmeras"""
-    status = api_client.get_capture_status()
+    # Controles em linha
+    col1, col2 = st.columns([1, 4])
     
-    # Botão de atualização para câmeras
-    if st.button("🔄 Atualizar Status das Câmeras", key="refresh_cameras", use_container_width=True):
-        st.rerun()
+    with col1:
+        st.empty()  # Mantém alinhamento com a outra aba
+    
+    with col2:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("🔄 Atualizar", use_container_width=True, key="btn_refresh_cameras"):
+                st.rerun()
+        with col_b:
+            auto_refresh = st.checkbox("Auto (5s)", key="chk_auto_cameras")
+    
+    # Buscar status das câmeras
+    status = api_client.get_capture_status()
     
     if 'error' in status:
         st.error(f"❌ {status['error']}")
@@ -66,6 +77,11 @@ def render_cameras_content(api_client):
             else:
                 cols[3].write("🕒 Aguardando...")
 
+    # Lógica de atualização automática no final
+    if auto_refresh:
+        time.sleep(5)
+        st.rerun()
+
 def render_processor_content(api_client):
     """Conteúdo da tab de processamento"""
     # Estilo
@@ -101,86 +117,40 @@ def render_processor_content(api_client):
     with col2:
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("🔄 Atualizar", use_container_width=True):
+            if st.button("🔄 Atualizar", use_container_width=True, key="btn_refresh_processor"):
                 st.rerun()
         with col_b:
-            auto_refresh = st.checkbox("Auto (5s)", key="auto_refresh")
+            auto_refresh = st.checkbox("Auto (5s)", key="chk_auto_processor")
     
     # Buscar dados
     processor_status = api_client.get_processor_status(hours=time_filter)
     
-    # Layout em 3 colunas
+    # Layout em 3 colunas para métricas
     col1, col2, col3 = st.columns(3)
     
     # Coluna 1 - Status dos Lotes
     with col1:
         st.subheader("Status dos Lotes")
-        
-        # Grid 2x2 para métricas
         lot_cols1 = st.columns(2)
         with lot_cols1[0]:
-            st.metric(
-                "Pendentes",
-                processor_status['pending_batches'],
-                delta=None,
-                help="Aguardando processamento"
-            )
+            st.metric("Pendentes", processor_status['pending_batches'])
         with lot_cols1[1]:
-            st.metric(
-                "Processando",
-                processor_status['processing_batches'],
-                delta=None,
-                help="Em processamento"
-            )
+            st.metric("Processando", processor_status['processing_batches'])
         
         lot_cols2 = st.columns(2)
         with lot_cols2[0]:
-            st.metric(
-                "Completados",
-                processor_status['completed_batches'],
-                delta=None,
-                help="Processamento finalizado"
-            )
+            st.metric("Completados", processor_status['completed_batches'])
         with lot_cols2[1]:
-            st.metric(
-                "Erros",
-                processor_status['error_batches'],
-                delta=None,
-                delta_color="inverse",
-                help="Falhas no processamento"
-            )
-        
-        # Gráfico de lotes por hora
-        st.caption("Lotes Processados por Hora")
-        df = pd.DataFrame(processor_status['hourly_stats'])
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df.set_index('datetime', inplace=True)
-        st.line_chart(
-            df['total_batches'],
-            height=120,
-            use_container_width=True
-        )
+            st.metric("Erros", processor_status['error_batches'])
     
     # Coluna 2 - Detecção de Faces
     with col2:
         st.subheader("Detecção de Faces")
-        
-        # Grid 2x2 para métricas
         face_cols1 = st.columns(2)
         with face_cols1[0]:
-            st.metric(
-                "Detectadas",
-                processor_status['total_faces_detected'],
-                delta=None,
-                help="Total de faces nas imagens"
-            )
+            st.metric("Detectadas", processor_status['total_faces_detected'])
         with face_cols1[1]:
-            st.metric(
-                "Reconhecidas",
-                processor_status['total_faces_recognized'],
-                delta=None,
-                help="Faces com match"
-            )
+            st.metric("Reconhecidas", processor_status['total_faces_recognized'])
         
         face_cols2 = st.columns(2)
         with face_cols2[0]:
@@ -188,49 +158,42 @@ def render_processor_content(api_client):
                 processor_status['total_faces_recognized'] / 
                 processor_status['total_faces_detected'] * 100
             ) if processor_status['total_faces_detected'] > 0 else 0
-            st.metric(
-                "Taxa",
-                f"{recognized_rate:.1f}%",
-                delta=None,
-                help="Taxa de reconhecimento"
-            )
+            st.metric("Taxa", f"{recognized_rate:.1f}%")
         with face_cols2[1]:
-            st.metric(
-                "Não Reconhecidas",
-                processor_status['total_faces_unknown'],
-                delta=None,
-                help="Faces sem match"
-            )
-        
-        # Gráfico de faces por hora
-        st.caption("Faces Detectadas por Hora")
-        st.line_chart(
-            df['total_faces'],
-            height=120,
-            use_container_width=True
-        )
+            st.metric("Não Reconhecidas", processor_status['total_faces_unknown'])
     
     # Coluna 3 - Métricas Técnicas
     with col3:
         st.subheader("Métricas")
-        st.metric(
-            "Tempo/Lote",
-            f"{processor_status['avg_processing_time']:.1f}s",
-            delta=None,
-            help="Tempo médio de processamento"
-        )
-        st.metric(
-            "Distância",
-            f"{processor_status['avg_distance']:.3f}",
-            delta=None,
-            help="Média das distâncias (menor = mais similar)"
-        )
-        st.metric(
-            "Tolerância",
-            f"{processor_status['tolerance']:.3f}",
-            delta=None,
-            help="Limite para reconhecimento"
-        )
+        metric_cols1 = st.columns(2)
+        with metric_cols1[0]:
+            st.metric("Tempo/Lote", f"{processor_status['avg_processing_time']:.1f}s")
+        with metric_cols1[1]:
+            st.metric("Tolerância", f"{processor_status['tolerance']:.3f}")
+        
+        metric_cols2 = st.columns(2)
+        with metric_cols2[0]:
+            st.metric("Distância", f"{processor_status['avg_distance']:.3f}")
+        with metric_cols2[1]:
+            st.empty()  # Mantém o grid 2x2 mesmo com apenas 3 métricas
+
+    # Separador
+    st.markdown("---")
+
+    # Gráficos em nova seção
+    st.subheader("Histórico")
+    graph_cols = st.columns(2)
+    
+    with graph_cols[0]:
+        st.caption("Lotes Processados por Hora")
+        df = pd.DataFrame(processor_status['hourly_stats'])
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df.set_index('datetime', inplace=True)
+        st.line_chart(df['total_batches'], height=250)
+        
+    with graph_cols[1]:
+        st.caption("Faces Detectadas por Hora")
+        st.line_chart(df['total_faces'], height=250)
 
     if 'error' in processor_status:
         st.error(f"❌ {processor_status['error']}")

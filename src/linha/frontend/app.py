@@ -68,7 +68,7 @@ st.markdown("""
             border-radius: 0 !important;
         }
         
-        /* Container do logo com gradiente */
+        /* Container do logo com gradiente - mantém centralizado */
         .logo-container {
             display: flex;
             justify-content: center;
@@ -94,6 +94,41 @@ st.markdown("""
             position: relative;
             z-index: 1;
             transform: translateX(-50px); /* Ajuste fino para centralizar */
+        }
+        
+        /* Dashboard metrics - ajustado para ficar na direita */
+        .dashboard-metrics {
+            position: fixed;
+            top: 50%;
+            right: 2rem;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            background: rgba(14, 17, 23, 0.7);
+            padding: 1.5rem;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+        
+        .metric {
+            text-align: left;
+            color: #E0E0E0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.7;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -177,30 +212,62 @@ class FrontendApp:
         """Página inicial do LineGuard"""
         import os
         
-        # Caminho absoluto para o logo
+        # Buscar dados do dashboard
+        dashboard = self.api.get_dashboard()
+        
+        # Container principal
+        st.markdown("""
+            <style>
+                .home-container {
+                    position: relative;
+                    height: 100vh;
+                    width: 100%;
+                    background: linear-gradient(135deg, #0E1117 0%, #1E1E1E 100%);
+                }
+            </style>
+            <div class="home-container">
+        """, unsafe_allow_html=True)
+        
+        # Logo
         current_dir = os.path.dirname(os.path.abspath(__file__))
         logo_path = os.path.join(current_dir, "..", "..", "data", "logo", "line_guard1.webp")
         
-        # Verificar se o arquivo existe
         if os.path.exists(logo_path):
-            # Converter webp para base64
+            # Converter logo
             import base64
             from PIL import Image
             import io
             
-            # Abrir e converter imagem
             img = Image.open(logo_path)
             buffer = io.BytesIO()
             img.save(buffer, format="PNG")
             encoded = base64.b64encode(buffer.getvalue()).decode()
             
+            # Renderizar logo e dashboard
             st.markdown(f"""
                 <div class='logo-container'>
                     <img src='data:image/png;base64,{encoded}' alt='LineGuard Logo'>
                 </div>
+                
+                <div class="dashboard-metrics">
+                    <div class="metric">
+                        <div class="metric-value">👥 {dashboard.get('total_employees', 0)}</div>
+                        <div class="metric-label">Funcionários</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">📸 {dashboard.get('active_cameras', 0)}</div>
+                        <div class="metric-label">Câmeras Ativas</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">{"✅" if dashboard.get('system_status') == "Online" else "❌"} {dashboard.get('system_status', 'Offline')}</div>
+                    </div>
+                </div>
             """, unsafe_allow_html=True)
         else:
             st.error(f"Logo não encontrado em: {logo_path}")
+        
+        # Fechar container
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def main():
     # Inicializar app

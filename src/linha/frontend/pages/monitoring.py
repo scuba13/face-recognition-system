@@ -77,15 +77,18 @@ def render_processor_content(api_client):
             
             /* Estilo para o seletor de tempo e atualização */
             [data-testid="stHorizontalBlock"] { gap: 1rem; align-items: center; }
-            .time-filter { max-width: 150px; }
+            div[data-testid="stSelectbox"] { max-width: 100px; }
+            
+            /* Remover efeito de loading durante atualização */
+            .stDeployButton { display: none; }
+            .stSpinner { display: none; }
         </style>
     """, unsafe_allow_html=True)
     
     # Controles em linha
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([1, 4])
     
     with col1:
-        # Seletor de tempo mais compacto
         time_filter = st.selectbox(
             "Período:",
             options=[1, 3, 6, 12, 24],
@@ -96,18 +99,12 @@ def render_processor_content(api_client):
         )
     
     with col2:
-        # Radio para auto-atualização
-        auto_refresh = st.radio(
-            "Atualização",
-            options=["Manual", "Auto (5s)"],
-            horizontal=True,
-            key="auto_refresh"
-        )
-    
-    # Lógica de atualização automática
-    if auto_refresh == "Auto (5s)":
-        time.sleep(5)  # Espera 5 segundos
-        st.rerun()  # Recarrega a página
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("🔄 Atualizar", use_container_width=True):
+                st.rerun()
+        with col_b:
+            auto_refresh = st.checkbox("Auto (5s)", key="auto_refresh")
     
     # Buscar dados
     processor_status = api_client.get_processor_status(hours=time_filter)
@@ -235,12 +232,13 @@ def render_processor_content(api_client):
             help="Limite para reconhecimento"
         )
 
-    # Botão de atualização para processamento
-    if st.button("🔄 Atualizar Status do Processamento", key="refresh_processor", use_container_width=True):
-        st.rerun()
-
     if 'error' in processor_status:
         st.error(f"❌ {processor_status['error']}")
+
+    # Lógica de atualização automática no final
+    if auto_refresh:
+        time.sleep(5)
+        st.rerun()
 
 def render_monitoring_page(api_client):
     """Renderiza página de monitoramento"""

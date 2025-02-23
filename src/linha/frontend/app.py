@@ -96,7 +96,7 @@ st.markdown("""
             transform: translateX(-50px); /* Ajuste fino para centralizar */
         }
         
-        /* Dashboard metrics - ajustado para ficar na direita */
+        /* Dashboard metrics */
         .dashboard-metrics {
             position: fixed;
             top: 50%;
@@ -105,11 +105,7 @@ st.markdown("""
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
-            background: rgba(14, 17, 23, 0.7);
             padding: 1.5rem;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             z-index: 100;
         }
         
@@ -124,11 +120,7 @@ st.markdown("""
         .metric-value {
             font-size: 1.2rem;
             font-weight: bold;
-        }
-        
-        .metric-label {
-            font-size: 0.9rem;
-            opacity: 0.7;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -252,11 +244,9 @@ class FrontendApp:
                 <div class="dashboard-metrics">
                     <div class="metric">
                         <div class="metric-value">👥 {dashboard.get('total_employees', 0)}</div>
-                        <div class="metric-label">Funcionários</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value">📸 {dashboard.get('active_cameras', 0)}</div>
-                        <div class="metric-label">Câmeras Ativas</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value">{"✅" if dashboard.get('system_status') == "Online" else "❌"} {dashboard.get('system_status', 'Offline')}</div>

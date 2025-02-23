@@ -258,8 +258,6 @@ class MongoDBHandler:
     def get_processor_statistics(self, hours=24):
         """Retorna estatísticas de processamento das últimas X horas"""
         try:
-            print(f"\n=== Buscando estatísticas de processamento (últimas {hours} horas) ===")
-            
             cutoff = datetime.now() - timedelta(hours=hours)
             
             # Pipeline para métricas gerais
@@ -270,10 +268,7 @@ class MongoDBHandler:
                     }
                 },
                 {
-                    '$unwind': '$detections'  # Desagregar array de detections
-                },
-                {
-                    '$unwind': '$detections.matches'  # Desagregar matches onde está a distância
+                    '$unwind': '$detections'
                 },
                 {
                     '$group': {
@@ -283,12 +278,13 @@ class MongoDBHandler:
                         'total_faces_detected': {'$sum': '$total_faces_detected'},
                         'total_faces_recognized': {'$sum': '$total_faces_recognized'},
                         'total_faces_unknown': {'$sum': '$total_faces_unknown'},
-                        'avg_distance': {'$avg': '$detections.matches.distance'}  # Campo correto da distância
+                        'total_confidence': {'$sum': '$detections.average_confidence'},  # Campo correto
+                        'count_detections': {'$sum': 1}
                     }
                 }
             ]
             
-            # Pipeline para estatísticas por hora
+            # Pipeline para horas
             hourly_pipeline = [
                 {
                     '$match': {
@@ -342,7 +338,7 @@ class MongoDBHandler:
                     'total_faces_detected': metrics['total_faces_detected'],
                     'total_faces_recognized': metrics['total_faces_recognized'],
                     'total_faces_unknown': metrics['total_faces_unknown'],
-                    'avg_distance': metrics['avg_distance'] or 0,
+                    'avg_distance': metrics['total_confidence'] / metrics['count_detections'] if metrics['count_detections'] > 0 else 0,
                     'pending_batches': batch_counts['pending'],
                     'processing_batches': batch_counts['processing'],
                     'completed_batches': batch_counts['completed'],
@@ -380,6 +376,8 @@ class MongoDBHandler:
     def check_detection_structure(self):
         sample = list(self.detections.find().limit(1))
         if sample:
+            print("\nExemplo de detecção:")
+            print(f"Detections: {sample[0].get('detections', [])}")
             print("\nEstrutura de uma detecção:")
             print(f"Keys: {list(sample[0].keys())}")
             if 'detections' in sample[0]:

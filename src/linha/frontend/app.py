@@ -11,53 +11,90 @@ from linha.frontend.api_client import APIClient
 
 # Configurações globais do Streamlit
 st.set_page_config(
-    page_title="Sistema de Reconhecimento Facial",
-    page_icon="👤",
+    page_title="LineGuard",
+    page_icon="👁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Remover TODOS os elementos da UI do Streamlit
+# Estilos modernos e ocultação completa de elementos
 st.markdown("""
     <style>
-        /* Esconder menu superior, header e footer */
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
+        /* Esconder TODOS os elementos do menu superior */
+        #MainMenu {visibility: hidden !important;}
+        header {visibility: hidden !important;}
+        footer {visibility: hidden !important;}
+        div[data-testid="stToolbar"] {visibility: hidden !important;}
+        div[data-testid="stDecoration"] {visibility: hidden !important;}
+        div[data-testid="stStatusWidget"] {visibility: hidden !important;}
+        section[data-testid="stSidebar"] > div {padding-top: 0rem !important;}
+        section[data-testid="stSidebar"] > div > div {padding-top: 0rem !important;}
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] > div:first-child {padding-top: 0rem !important;}
+        .stApp > header {display: none !important;}
+        .stApp [data-testid="stHeader"] {display: none !important;}
+        .stApp [data-testid="stToolbar"] {display: none !important;}
+        .stApp [data-testid="stAppViewContainer"] > section:first-child {top: 0 !important;}
+        .stApp [data-testid="stSidebarNav"] {display: none !important;}
+        .stApp [data-testid="stSidebarNavItems"] {display: none !important;}
         
-        /* Esconder toolbar e decorações */
-        div[data-testid="stToolbar"] {visibility: hidden;}
-        div[data-testid="stDecoration"] {visibility: hidden;}
-        div[data-testid="stStatusWidget"] {visibility: hidden;}
-        
-        /* Esconder elementos da sidebar */
-        section[data-testid="stSidebar"] > div {padding-top: 0rem;}
-        section[data-testid="stSidebar"] > div > div {padding-top: 0rem;}
-        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] > div:first-child {padding-top: 0rem;}
-        
-        /* Esconder outros elementos da UI */
-        .stApp > header {display: none;}
-        .stApp [data-testid="stHeader"] {display: none;}
-        .stApp [data-testid="stToolbar"] {display: none;}
-        .stApp [data-testid="stAppViewContainer"] > section:first-child {top: 0;}
-        
-        /* Esconder navegação da sidebar */
-        .stApp [data-testid="stSidebarNav"] {display: none;}
-        .stApp [data-testid="stSidebarNavItems"] {display: none;}
-        
-        /* Ajustar espaçamentos */
-        .main .block-container {padding-top: 1rem;}
-        
-        /* Remover padding superior da sidebar */
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-            padding-top: 0rem;
-            padding-bottom: 0rem;
+        /* Remover rolagem e padding */
+        .main .block-container {
+            padding: 0 !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
         }
         
-        /* Esconder qualquer elemento de navegação */
-        div.streamlit-expanderHeader {display: none;}
-        .sidebar .sidebar-content {padding-top: 0rem;}
-        [data-testid="stSidebarNav"] {display: none;}
+        /* Ajustes da sidebar */
+        [data-testid="stSidebar"] {
+            background-color: #0E1117;
+            width: 200px !important;
+        }
+        
+        /* Estilo dos botões do menu */
+        .stButton button {
+            width: 100%;
+            border: none !important;
+            padding: 0.75rem 1rem !important;
+            background-color: transparent !important;
+            color: #E0E0E0 !important;
+            text-align: left !important;
+            font-size: 0.95rem !important;
+        }
+        .stButton button:hover {
+            background-color: #2E2E2E !important;
+        }
+        .stButton button[kind="primary"] {
+            background-color: #2E2E2E !important;
+            border-radius: 0 !important;
+        }
+        
+        /* Container do logo com gradiente */
+        .logo-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            background: linear-gradient(135deg, #0E1117 0%, #1E1E1E 100%);
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            margin-left: 100px; /* Compensar a largura da sidebar */
+            overflow: hidden;
+        }
+        
+        /* Logo */
+        .logo-container img {
+            max-width: 450px;
+            width: 100%;
+            height: auto;
+            opacity: 0.85;
+            filter: drop-shadow(0 0 15px rgba(255,255,255,0.07));
+            position: relative;
+            z-index: 1;
+            transform: translateX(-50px); /* Ajuste fino para centralizar */
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -104,11 +141,11 @@ class FrontendApp:
         """Renderiza a aplicação"""
         # Menu lateral
         with st.sidebar:
-            st.title("Menu Principal")
+            st.title("LineGuard")
             st.markdown("---")
             
             # Menu de navegação
-            pages = ["Início", "Cadastro de Funcionários", "Monitoramento", "Relatórios"]
+            pages = ["Início", "Funcionários", "Monitoramento", "Relatórios"]
             
             for page in pages:
                 if st.button(
@@ -129,7 +166,7 @@ class FrontendApp:
         with main_container:
             if st.session_state.page == "Início":
                 self.show_home()
-            elif st.session_state.page == "Cadastro de Funcionários":
+            elif st.session_state.page == "Funcionários":
                 render_employee_page(self.api)
             elif st.session_state.page == "Monitoramento":
                 render_monitoring_page(self.api)
@@ -137,31 +174,33 @@ class FrontendApp:
                 st.info("🚧 Módulo em desenvolvimento...")
             
     def show_home(self):
-        """Página inicial"""
-        st.title("Sistema de Reconhecimento Facial")
-        st.markdown("---")
+        """Página inicial do LineGuard"""
+        import os
         
-        # Buscar dados do dashboard
-        dashboard = self.api.get_dashboard()
+        # Caminho absoluto para o logo
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(current_dir, "..", "..", "data", "logo", "line_guard1.webp")
         
-        if 'error' in dashboard:
-            st.error(f"❌ Erro ao carregar dashboard: {dashboard['error']}")
-            return
-        
-        # Cards informativos
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.info("👥 Funcionários Cadastrados")
-            st.metric("Total", dashboard['total_employees'])
+        # Verificar se o arquivo existe
+        if os.path.exists(logo_path):
+            # Converter webp para base64
+            import base64
+            from PIL import Image
+            import io
             
-        with col2:
-            st.warning("📸 Câmeras Ativas")
-            st.metric("Total", dashboard['active_cameras'])
+            # Abrir e converter imagem
+            img = Image.open(logo_path)
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            encoded = base64.b64encode(buffer.getvalue()).decode()
             
-        with col3:
-            st.success("✅ Sistema")
-            st.metric("Status", dashboard['system_status'])
+            st.markdown(f"""
+                <div class='logo-container'>
+                    <img src='data:image/png;base64,{encoded}' alt='LineGuard Logo'>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.error(f"Logo não encontrado em: {logo_path}")
 
 def main():
     # Inicializar app

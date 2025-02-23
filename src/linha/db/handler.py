@@ -333,7 +333,7 @@ class MongoDBHandler:
                     'processing_history': []
                 }
                 
-            print(f"Estatísticas calculadas: {stats}")
+            # print(f"Estatísticas calculadas: {stats}")
             return stats
             
         except Exception as e:

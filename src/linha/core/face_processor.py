@@ -199,30 +199,29 @@ class FaceProcessor:
         """Para o processamento"""
         self.running = False 
 
-    def get_stats(self) -> Dict:
+    def get_processor_status(self):
         """Retorna estatísticas do processador"""
         try:
-            print("\n=== Buscando estatísticas de processamento ===")
+            # Buscar estatísticas do MongoDB
+            stats = self.db_handler.get_processor_stats()
             
-            # Buscar dados do MongoDB
-            stats = self.db_handler.get_processor_statistics()
-            
-            # Adicionar status atual
-            stats.update({
-                'running': self.running,
+            # Calcular métricas sem logging excessivo
+            metrics = {
                 'avg_processing_time': stats.get('avg_processing_time', 0),
-                'total_faces_detected': stats.get('total_faces', 0),
-                'total_faces_recognized': stats.get('recognized_faces', 0),
-                'avg_confidence': stats.get('avg_confidence', 0),
-                'processing_history': stats.get('processing_history', [])
-            })
+                'total_faces_detected': stats.get('total_faces_detected', 0),
+                'total_faces_recognized': stats.get('total_faces_recognized', 0),
+                'total_faces_unknown': stats.get('total_faces_unknown', 0),
+                'avg_distance': stats.get('avg_confidence', 0.6),
+                'tolerance': self.tolerance,
+                'pending_batches': self.db_handler.count_pending_batches(),
+                'processing_batches': self.db_handler.count_processing_batches(),
+                'completed_batches': stats.get('total_batches', 0),
+                'error_batches': 0,
+                'hourly_stats': self._get_hourly_stats()
+            }
             
-            print(f"Estatísticas calculadas: {stats}")
-            return stats
+            return metrics
             
         except Exception as e:
-            print(f"✗ Erro ao buscar estatísticas: {str(e)}")
-            return {
-                'error': str(e),
-                'running': self.running
-            } 
+            logger.error(f"Erro ao buscar status do processador: {str(e)}")
+            return {'error': str(e)} 

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def render_monitoring_page(api_client):
     """Renderiza página de monitoramento"""
     try:
-        st.title("Monitoramento do Sistema")
+        st.title("LineGuard - Monitoramento")
         
         # Criar tabs
         tab_cameras, tab_processor = st.tabs([

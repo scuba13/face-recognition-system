@@ -68,30 +68,46 @@ def render_cameras_content(api_client):
 
 def render_processor_content(api_client):
     """Conteúdo da tab de processamento"""
-    # Habilitar scroll na página inteira
+    # Estilo
     st.markdown("""
         <style>
-            html {
-                overflow-y: auto;
-            }
-            .main {
-                overflow-y: auto;
-                height: 100%;
-            }
-            .stTabs [data-baseweb="tab-panel"] {
-                height: calc(100vh - 200px);
-                overflow-y: auto;
-            }
+            html { overflow-y: auto; }
+            .main { overflow-y: auto; height: 100%; }
+            .stTabs [data-baseweb="tab-panel"] { height: calc(100vh - 200px); overflow-y: auto; }
+            
+            /* Estilo para o seletor de tempo e atualização */
+            [data-testid="stHorizontalBlock"] { gap: 1rem; align-items: center; }
+            .time-filter { max-width: 150px; }
         </style>
     """, unsafe_allow_html=True)
     
-    # Filtro de tempo
-    time_filter = st.selectbox(
-        "Período de análise",
-        options=[1, 3, 6, 12, 24],
-        format_func=lambda x: f"Últimas {x} horas",
-        index=4
-    )
+    # Controles em linha
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Seletor de tempo mais compacto
+        time_filter = st.selectbox(
+            "Período:",
+            options=[1, 3, 6, 12, 24],
+            format_func=lambda x: f"{x}h",
+            index=4,
+            label_visibility="collapsed",
+            key="time_filter"
+        )
+    
+    with col2:
+        # Radio para auto-atualização
+        auto_refresh = st.radio(
+            "Atualização",
+            options=["Manual", "Auto (5s)"],
+            horizontal=True,
+            key="auto_refresh"
+        )
+    
+    # Lógica de atualização automática
+    if auto_refresh == "Auto (5s)":
+        time.sleep(5)  # Espera 5 segundos
+        st.rerun()  # Recarrega a página
     
     # Buscar dados
     processor_status = api_client.get_processor_status(hours=time_filter)

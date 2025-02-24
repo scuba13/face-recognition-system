@@ -136,4 +136,19 @@ class APIClient:
         except requests.exceptions.ConnectionError:
             return {'error': 'API não está respondendo'}
         except Exception as e:
+            return {'error': str(e)}
+
+    def get_detections(self, days: int = 1) -> Dict:
+        """Retorna detecções dos últimos X dias"""
+        try:
+            print(f"\nChamando GET {self.base_url}/detections")
+            response = requests.get(
+                f"{self.base_url}/detections",
+                params={'days': days},
+                timeout=5
+            )
+            data = response.json()
+            return data
+        except Exception as e:
+            print(f"✗ Erro: {str(e)}")
             return {'error': str(e)} 

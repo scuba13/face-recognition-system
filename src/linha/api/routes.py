@@ -256,4 +256,33 @@ def get_dashboard():
         
     except Exception as e:
         print(f"✗ Erro no dashboard: {str(e)}")
+        return {'error': str(e)}
+
+@router.get("/detections")
+def get_detections(days: int = 1):
+    """Retorna detecções dos últimos X dias"""
+    try:
+        print(f"\n=== API: Buscando detecções dos últimos {days} dias ===")
+        
+        # Get instance
+        db_handler = get_db_handler()
+        if not db_handler:
+            return {'error': 'DB Handler não inicializado'}
+        
+        # Buscar detecções
+        result = db_handler.get_recent_detections(days=days)
+        
+        # Verificar se é um erro
+        if isinstance(result, dict) and 'error' in result:
+            return result
+            
+        # Retornar lista de detecções
+        return {
+            'detections': result,
+            'total': len(result),
+            'days': days
+        }
+        
+    except Exception as e:
+        print(f"✗ Erro: {str(e)}")
         return {'error': str(e)} 

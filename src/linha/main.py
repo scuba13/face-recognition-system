@@ -46,29 +46,30 @@ def main():
             raise Exception("Timeout ao iniciar API")
         print("✓ Servidor API iniciado na porta 8000")
         
-        # 3. Criar instâncias após banco e API estarem prontos
-        image_capture = ImageCapture(
-            production_lines=PRODUCTION_LINES,
-            interval=CAPTURE_INTERVAL
-        )
-        face_processor = FaceProcessor(db_handler)
+        # Comentado temporariamente para testes
+        # # 3. Criar instâncias após banco e API estarem prontos
+        # image_capture = ImageCapture(
+        #     production_lines=PRODUCTION_LINES,
+        #     interval=CAPTURE_INTERVAL
+        # )
+        # face_processor = FaceProcessor(db_handler)
         
-        # 4. Salvar globalmente
+        # # 4. Salvar globalmente
         set_db_handler(db_handler)
-        set_image_capture(image_capture)
-        set_face_processor(face_processor)
+        # set_image_capture(image_capture)
+        # set_face_processor(face_processor)
         
-        # 5. Iniciar captura
-        print("▶ Iniciando captura de imagens...")
-        image_capture.set_db_handler(db_handler)
-        image_capture.start_capture()
-        print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
+        # # 5. Iniciar captura
+        # print("▶ Iniciando captura de imagens...")
+        # image_capture.set_db_handler(db_handler)
+        # image_capture.start_capture()
+        # print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
         
-        # 6. Inicializar processador de faces por último
-        processor_thread = Thread(target=face_processor.start_processing)
-        processor_thread.daemon = True
-        processor_thread.start()
-        print("✓ Processador de faces iniciado")
+        # # 6. Inicializar processador de faces por último
+        # processor_thread = Thread(target=face_processor.start_processing)
+        # processor_thread.daemon = True
+        # processor_thread.start()
+        # print("✓ Processador de faces iniciado")
         
         # Loop principal
         while True:
@@ -79,10 +80,11 @@ def main():
     except Exception as e:
         print(f"\n✗ Erro na execução principal: {str(e)}")
     finally:
-        if 'face_processor' in locals():
-            face_processor.stop_processing()
-        if 'image_capture' in locals():
-            image_capture.stop_capture()
+        # if 'face_processor' in locals():
+        #     face_processor.stop_processing()
+        # if 'image_capture' in locals():
+        #     image_capture.stop_capture()
+        pass
 
 if __name__ == "__main__":
     main() 

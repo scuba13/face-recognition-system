@@ -223,27 +223,80 @@ class MongoDBHandler:
         try:
             logger.info(f"Buscando detecções dos últimos {days} dias")
             cutoff = datetime.now() - timedelta(days=days)
-            logger.info(f"Data limite: {cutoff}")
             
-            # Construir query
-            query = {'timestamp': {'$gte': cutoff}}
-            logger.info(f"Query: {query}")
+            # Pipeline de agregação para otimizar a consulta
+            pipeline = [
+                # Filtrar por data
+                {
+                    '$match': {
+                        'timestamp': {'$gte': cutoff}
+                    }
+                },
+                
+                # Projetar campos necessários e criar campos de hora e minuto
+                {
+                    '$project': {
+                        'line_id': 1,
+                        'timestamp': 1,
+                        'hour': {
+                            '$dateToString': {
+                                'format': '%Y-%m-%d %H:00',
+                                'date': '$timestamp'
+                            }
+                        },
+                        'minute': {
+                            '$dateToString': {
+                                'format': '%Y-%m-%d %H:%M',
+                                'date': '$timestamp'
+                            }
+                        },
+                        'detections': {
+                            '$map': {
+                                'input': '$detections',
+                                'as': 'detection',
+                                'in': {
+                                    'name': '$$detection.name',
+                                    'confidence': {'$ifNull': ['$$detection.confidence', 0]},
+                                    'employee_id': '$$detection.employee_id'
+                                }
+                            }
+                        }
+                    }
+                },
+                
+                # Ordenar por timestamp decrescente
+                {
+                    '$sort': {
+                        'timestamp': -1
+                    }
+                }
+            ]
             
-            # Executar busca
-            detections = list(self.detections.find(
-                query,
-                sort=[('timestamp', -1)]
-            ))
+            # Executar pipeline
+            detections = list(self.detections.aggregate(pipeline))
+            logger.info(f"Encontradas {len(detections)} detecções")
             
-            logger.info(f"Detecções encontradas: {len(detections)}")
-            for det in detections[:5]:  # Mostrar primeiras 5
-                logger.debug(f"Detecção: {det['_id']} - {det['timestamp']}")
+            # Garantir que todos os campos existam e formatar datas
+            formatted_detections = []
+            for det in detections:
+                try:
+                    formatted_det = {
+                        'line_id': det.get('line_id', 'unknown'),
+                        'timestamp': det['timestamp'].isoformat() if det.get('timestamp') else None,
+                        'hour': det.get('hour'),
+                        'minute': det.get('minute'),
+                        'detections': det.get('detections', [])
+                    }
+                    formatted_detections.append(formatted_det)
+                except Exception as e:
+                    logger.error(f"Erro ao formatar detecção: {str(e)}")
+                    continue
             
-            return detections
+            return formatted_detections
             
         except Exception as e:
-            logger.error(f"Erro ao buscar detecções recentes: {str(e)}", exc_info=True)
-            return []
+            logger.error(f"Erro ao buscar detecções: {str(e)}", exc_info=True)
+            return {'error': str(e)}
 
     @backoff.on_exception(backoff.expo, PyMongoError, max_tries=3)
     def register_batch_detections(self, detections):

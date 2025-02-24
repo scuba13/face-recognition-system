@@ -3,6 +3,7 @@ from linha.db.handler import MongoDBHandler
 from linha.db.crud.employee import EmployeeCRUD
 from linha.frontend.pages.employee import render_employee_page
 from linha.frontend.pages.monitoring import render_monitoring_page
+from linha.frontend.pages.reports import render_reports_page
 from linha.core.face_processor import FaceProcessor
 from linha.core.image_capture import ImageCapture
 from linha.config.settings import PRODUCTION_LINES, CAPTURE_INTERVAL
@@ -41,7 +42,6 @@ st.markdown("""
         .main .block-container {
             padding: 0 !important;
             max-width: 100% !important;
-            overflow: hidden !important;
         }
         
         /* Ajustes da sidebar */
@@ -197,6 +197,8 @@ class FrontendApp:
                 render_employee_page(self.api)
             elif st.session_state.page == "Monitoramento":
                 render_monitoring_page(self.api)
+            elif st.session_state.page == "Relatórios":
+                render_reports_page(self.api)
             else:
                 st.info("🚧 Módulo em desenvolvimento...")
             

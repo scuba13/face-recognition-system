@@ -239,17 +239,24 @@ def get_dashboard():
         print("✓ DB Handler obtido")
         
         image_capture = get_image_capture()
-        print("✓ Image Capture obtido")
-        
         face_processor = get_face_processor()
-        print("✓ Face Processor obtido")
         
         # Build simple response
         dashboard = {
-            'total_employees': len(db_handler.employee_crud.list()),
-            'active_cameras': len([c for c in image_capture.get_status().get('cameras', {}).values() if c.get('is_opened', False)]),
-            'system_status': 'Online' if face_processor.running else 'Offline'
+            'total_employees': len(db_handler.employee_crud.list(True)),
+            'active_cameras': 0,  # Zero quando não há captura
+            'system_status': 'Offline'  # Offline quando não há processamento
         }
+        
+        # Atualizar status apenas se os serviços estiverem rodando
+        if image_capture:
+            dashboard['active_cameras'] = len([
+                c for c in image_capture.get_status().get('cameras', {}).values() 
+                if c.get('is_opened', False)
+            ])
+            
+        if face_processor:
+            dashboard['system_status'] = 'Online' if face_processor.running else 'Offline'
         
         print(f"Dashboard montado: {dashboard}")
         return dashboard

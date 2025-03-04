@@ -98,9 +98,20 @@ MONGODB_MAX_POOL_SIZE = 100
 BATCH_LOCK_TIMEOUT = 300  # 5 minutos em segundos
 
 # Configurações de captura
-CAPTURE_INTERVAL = int(os.getenv('CAPTURE_INTERVAL', '5'))  # Intervalo em segundos entre capturas (12 imagens/minuto com valor 5)
+CAPTURE_INTERVAL = int(os.getenv('CAPTURE_INTERVAL', '5'))  # Intervalo em segundos entre capturas
 FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.6'))
 MIN_BLUR_THRESHOLD = float(os.getenv('MIN_BLUR_THRESHOLD', '100'))
+
+# Configurações de detecção de movimento
+MOTION_DETECTION_ENABLED = bool(os.getenv('MOTION_DETECTION_ENABLED', 'True'))
+MOTION_THRESHOLD = float(os.getenv('MOTION_THRESHOLD', '3000'))  # Limiar para detecção de movimento
+MOTION_MIN_AREA = float(os.getenv('MOTION_MIN_AREA', '500'))  # Área mínima para considerar movimento
+MOTION_DRAW_CONTOURS = bool(os.getenv('MOTION_DRAW_CONTOURS', 'True'))  # Desenhar contornos nos frames
+MOTION_CAPTURE_FRAMES = int(os.getenv('MOTION_CAPTURE_FRAMES', '5'))  # Número de frames a capturar quando detectar movimento
+MOTION_CAPTURE_INTERVAL = float(os.getenv('MOTION_CAPTURE_INTERVAL', '0.1'))  # Intervalo entre frames em segundos (100ms)
+
+# Tipo de captura: 'interval' (intervalo fixo) ou 'motion' (baseado em movimento)
+CAPTURE_TYPE = os.getenv('CAPTURE_TYPE', 'motion')
 
 # Face Detection
 FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU

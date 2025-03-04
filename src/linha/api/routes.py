@@ -3,10 +3,15 @@ from fastapi import APIRouter, File, Form, UploadFile
 from linha.core.instance import (
     get_image_capture,
     get_face_processor,
-    get_db_handler  # Importar do instance.py ao invés de handler.py
+    get_db_handler,  # Importar do instance.py ao invés de handler.py
+    set_image_capture
 )
 from typing import Optional
-from linha.config.settings import FACE_RECOGNITION_TOLERANCE  # Adicionar import
+from linha.config.settings import (
+    FACE_RECOGNITION_TOLERANCE,  # Adicionar import
+    PRODUCTION_LINES
+)
+from linha.core.capture_factory import CaptureFactory
 import face_recognition
 import io
 
@@ -292,4 +297,69 @@ def get_detections(days: int = 1):
         
     except Exception as e:
         print(f"✗ Erro: {str(e)}")
+        return {'error': str(e)}
+
+@router.post("/capture/mode")
+def set_capture_mode(mode: str):
+    """
+    Altera o modo de captura entre 'interval' e 'motion'
+    
+    Args:
+        mode: Tipo de captura ('interval' ou 'motion')
+    """
+    try:
+        print(f"\n=== API: Alterando modo de captura para: {mode} ===")
+        
+        # Validar modo
+        if mode not in ['interval', 'motion']:
+            return {'error': f'Modo inválido: {mode}. Use "interval" ou "motion"'}
+        
+        # Obter instância atual
+        current_capture = get_image_capture()
+        if not current_capture:
+            return {'error': 'Sistema de captura não inicializado'}
+        
+        # Verificar se já está no modo desejado
+        current_mode = getattr(current_capture, 'capture_type', 'interval')
+        if hasattr(current_capture, 'get_status'):
+            status = current_capture.get_status()
+            current_mode = status.get('capture_type', current_mode)
+            
+        if current_mode == mode:
+            return {
+                'message': f'Sistema já está no modo {mode}',
+                'changed': False,
+                'current_mode': mode
+            }
+        
+        # Parar captura atual
+        print(f"Parando sistema de captura atual ({current_mode})...")
+        current_capture.stop_capture()
+        
+        # Criar nova instância com o modo desejado
+        print(f"Criando nova instância de captura ({mode})...")
+        new_capture = CaptureFactory.create_capture(
+            production_lines=PRODUCTION_LINES,
+            capture_type=mode
+        )
+        
+        # Configurar e iniciar nova instância
+        db_handler = get_db_handler()
+        if db_handler:
+            new_capture.set_db_handler(db_handler)
+            
+        new_capture.start_capture()
+        
+        # Atualizar instância global
+        set_image_capture(new_capture)
+        
+        return {
+            'message': f'Modo de captura alterado para {mode}',
+            'changed': True,
+            'previous_mode': current_mode,
+            'current_mode': mode
+        }
+        
+    except Exception as e:
+        print(f"✗ Erro ao alterar modo de captura: {str(e)}")
         return {'error': str(e)} 

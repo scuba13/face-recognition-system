@@ -1,37 +1,72 @@
+"""
+Módulo para captura de imagens baseada em detecção de movimento.
+"""
 import cv2
 import time
 import os
 from datetime import datetime, timedelta
 import logging
 from threading import Thread, Lock
+import numpy as np
+from collections import deque
 
 from linha.config.settings import (
-    BASE_IMAGE_DIR, 
-    CAPTURE_INTERVAL
+    BASE_IMAGE_DIR,
+    CAPTURE_INTERVAL,
+    MOTION_THRESHOLD,
+    MOTION_MIN_AREA,
+    MOTION_DRAW_CONTOURS,
+    MOTION_CAPTURE_FRAMES,
+    MOTION_CAPTURE_INTERVAL
 )
 from linha.utils.camera import setup_camera
 from linha.utils.validators import check_image_quality
+from linha.utils.motion_detector import MotionDetector
 
 logger = logging.getLogger(__name__)
 
-class ImageCapture:
+class MotionCapture:
+    """
+    Classe para captura de imagens baseada em detecção de movimento.
+    Captura múltiplos frames quando detecta movimento.
+    """
     def __init__(self, production_lines, interval=CAPTURE_INTERVAL):
         self.production_lines = production_lines
-        self.interval = interval  # Intervalo desejado entre capturas
+        self.interval = interval  # Intervalo para verificação de movimento
         self.running = True
-        self.capture_threads = []
+        self.capture_threads = {}  # {camera_key: thread}
         self.cameras = {}  # {camera_key: camera_instance}
         self.db_handler = None
         self.batch_dirs = {}  # {line_id: (dir, minute, image_count, start_time)}
         self.lock = Lock()
         self.last_capture_times = {}  # Dicionário para armazenar último tempo de captura por câmera
+        self.previous_frames = {}  # Armazenar frames anteriores para detecção de movimento
+        
+        # Configurações de detecção de movimento
+        self.motion_threshold = MOTION_THRESHOLD
+        self.motion_min_area = MOTION_MIN_AREA
+        self.motion_draw_contours = MOTION_DRAW_CONTOURS
+        self.motion_capture_frames = MOTION_CAPTURE_FRAMES
+        self.motion_capture_interval = MOTION_CAPTURE_INTERVAL
+        
+        # Inicializar detector de movimento
+        self.motion_detector = MotionDetector(
+            threshold=self.motion_threshold,
+            area_minima=self.motion_min_area,
+            desenhar_contornos=self.motion_draw_contours
+        )
+        
+        logger.info(f"MotionCapture inicializado: threshold={self.motion_threshold}, "
+                   f"min_area={self.motion_min_area}, frames={self.motion_capture_frames}, "
+                   f"interval={self.motion_capture_interval}s")
 
     def set_db_handler(self, db_handler):
+        """Define o manipulador de banco de dados"""
         self.db_handler = db_handler
 
     def start_capture(self):
         """Inicia captura em todas as câmeras"""
-        logger.info("Iniciando sistema de captura...")
+        logger.info("▶ Iniciando sistema de captura baseada em movimento...")
         logger.info(f"Linhas configuradas: {self.production_lines}")
         
         self.running = True
@@ -52,8 +87,8 @@ class ImageCapture:
                             args=(camera_key, line_id, camera_config)
                         )
                         thread.daemon = True
-                        self.capture_threads.append(thread)
                         thread.start()
+                        self.capture_threads[camera_key] = thread
                         logger.info(f"Thread de captura iniciada para câmera {camera_key}")
                     else:
                         logger.error(f"Falha ao inicializar câmera {camera_key}")
@@ -74,10 +109,15 @@ class ImageCapture:
                     'is_opened': True,
                     'can_capture': True,
                     'frames_count': 0,
-                    'fps_start_time': datetime.now()
+                    'fps_start_time': datetime.now(),
+                    'type': camera_config['type'],
+                    'last_motion_time': None,
+                    'motion_frames_buffer': deque(maxlen=2),  # Buffer para os últimos frames
+                    'last_frame_hash': None  # Adicionado para detecção de frames duplicados
                 }
                 self.cameras[camera_id] = camera_data
-                self.last_capture_times[camera_id] = None  # Inicializar no dicionário
+                self.last_capture_times[camera_id] = None
+                self.previous_frames[camera_id] = None
                 logger.info(f"Câmera {camera_config['name']} inicializada para linha {line_id}")
                 return camera_data
             return None
@@ -124,7 +164,7 @@ class ImageCapture:
     def _capture_loop(self, camera_key, line_id, camera_config):
         """Loop de captura para uma câmera"""
         try:
-            last_capture_time = time.time()
+            last_check_time = time.time()
             
             while self.running:
                 try:
@@ -146,20 +186,20 @@ class ImageCapture:
                             time.sleep(5)
                             continue
 
-                    # Verificar se é hora de capturar um frame
+                    # Verificar se é hora de capturar um frame para verificação de movimento
                     current_time = time.time()
-                    if current_time - last_capture_time >= self.interval:
-                        # Capturar frame
+                    if current_time - last_check_time >= self.interval:
+                        # Capturar frame para verificação
                         if is_async_camera:
                             # Para câmeras assíncronas, usar método read diretamente
                             ret, frame = cap.read()
                         else:
-                            # Para câmeras IP, limpar buffer de frames antigos
+                            # Limpar buffer de frames antigos (para câmeras IP)
                             if camera_config.get('type') == 'ip':
                                 # Descartar frames em buffer para garantir que capturamos o mais recente
                                 for _ in range(5):  # Aumentado para 5 frames
                                     cap.grab()
-                            
+                                
                             # Capturar frame
                             ret, frame = cap.read()
                         
@@ -202,34 +242,29 @@ class ImageCapture:
                             # Primeira vez, apenas armazenar o hash
                             camera['last_frame_hash'] = hash(frame.tobytes())
                         
-                        # Verificar qualidade da imagem
-                        if not check_image_quality(frame):
-                            logger.warning(f"Frame com baixa qualidade detectado na câmera {camera_key}, descartando...")
-                            continue
+                        # Atualizar buffer de frames
+                        camera['motion_frames_buffer'].append(frame.copy())
                         
-                        # Obter diretório do lote atual
-                        now = datetime.now()
-                        minute_str = now.strftime("%Y%m%d_%H%M")
-                        current_batch_dir = self._get_or_create_batch_dir(line_id, minute_str)
+                        # Verificar movimento se tiver pelo menos 2 frames
+                        if len(camera['motion_frames_buffer']) >= 2:
+                            frame_atual = camera['motion_frames_buffer'][-1]
+                            frame_anterior = camera['motion_frames_buffer'][-2]
+                            
+                            # Detectar movimento
+                            movimento_detectado, movimento_area, frame_marcado = self.motion_detector.detectar(
+                                frame_atual, frame_anterior
+                            )
+                            
+                            # Se detectou movimento, capturar sequência de frames
+                            if movimento_detectado:
+                                logger.info(f"Movimento detectado na câmera {camera_key}: área={movimento_area:.0f}")
+                                camera['last_motion_time'] = datetime.now()
+                                
+                                # Capturar sequência de frames
+                                self._capture_motion_sequence(camera_key, line_id, camera_config, frame_marcado, movimento_area)
                         
-                        # Salvar frame
-                        position = camera_config.get('position', 'default')
-                        timestamp = now.strftime("%H%M%S_%f")[:-3]  # Milissegundos
-                        filename = f"{position}_{timestamp}.jpg"
-                        filepath = os.path.join(current_batch_dir, filename)
-                        cv2.imwrite(filepath, frame)
-                        
-                        # Incrementar contador do lote
-                        self._increment_batch_count(line_id)
-                        
-                        # Atualizar contadores e tempo
-                        camera['frames_count'] += 1
-                        self.last_capture_times[camera_key] = now.isoformat()
-                        
-                        logger.info(f"Frame capturado: {filename}")
-                        
-                        # Atualizar tempo da última captura
-                        last_capture_time = current_time
+                        # Atualizar tempo da última verificação
+                        last_check_time = current_time
                     
                     # Pequena pausa para não sobrecarregar CPU
                     time.sleep(0.01)
@@ -253,119 +288,164 @@ class ImageCapture:
                     pass
                 del self.cameras[camera_key]
 
-    def _monitor_batches(self):
-        """Monitora e registra lotes completos"""
-        last_registered_minute = None
+    def _capture_motion_sequence(self, camera_key, line_id, camera_config, first_frame, movimento_area):
+        """
+        Captura uma sequência de frames após detectar movimento
         
-        while self.running:
-            try:
-                current_minute = datetime.now().strftime("%Y%m%d_%H%M")
+        Args:
+            camera_key: Identificador da câmera
+            line_id: Identificador da linha
+            camera_config: Configuração da câmera
+            first_frame: Primeiro frame com movimento (já capturado)
+            movimento_area: Área do movimento detectado
+        """
+        try:
+            camera = self.cameras.get(camera_key)
+            if not camera or not camera['can_capture']:
+                return
                 
-                # Se mudou o minuto, registrar lotes do minuto anterior
-                if current_minute != last_registered_minute and last_registered_minute:
-                    for line_id in self.production_lines.keys():
-                        batch_path = os.path.join(BASE_IMAGE_DIR, line_id, last_registered_minute)
+            now = datetime.now()
+            minute_str = now.strftime("%Y%m%d_%H%M")
+            
+            # Obter diretório do lote atual
+            current_batch_dir = self._get_or_create_batch_dir(line_id, minute_str)
+            
+            # Verificar se o primeiro frame está corrompido
+            try:
+                from linha.utils.camera import _check_frame_corruption
+                if _check_frame_corruption(first_frame):
+                    logger.warning(f"Primeiro frame corrompido na sequência de movimento, descartando...")
+                    return
+            except Exception as e:
+                logger.error(f"Erro ao verificar corrupção do primeiro frame: {str(e)}")
+            
+            # Salvar o primeiro frame (já capturado)
+            position = camera_config.get('position', 'default')
+            timestamp = now.strftime("%H%M%S_%f")[:-3]  # Milissegundos
+            filename = f"{position}_motion_{movimento_area:.0f}_{timestamp}_1.jpg"
+            filepath = os.path.join(current_batch_dir, filename)
+            cv2.imwrite(filepath, first_frame)
+            
+            # Incrementar contador do lote
+            self._increment_batch_count(line_id)
+            
+            # Atualizar contadores e tempo
+            camera['frames_count'] += 1
+            self.last_capture_times[camera_key] = now.isoformat()
+            
+            logger.info(f"Frame 1/{self.motion_capture_frames} capturado: {filename}")
+            
+            # Armazenar hash do último frame para evitar duplicatas
+            last_frame_hash = hash(first_frame.tobytes())
+            
+            # Verificar se é uma câmera assíncrona
+            cap = camera['cap']
+            is_async_camera = hasattr(cap, 'read') and hasattr(cap, 'stop') and hasattr(cap, 'get_fps')
+            
+            # Capturar frames adicionais
+            for i in range(2, self.motion_capture_frames + 1):
+                # Pequena pausa entre capturas
+                time.sleep(self.motion_capture_interval)
+                
+                # Capturar próximo frame
+                if is_async_camera:
+                    # Para câmeras assíncronas, usar método read diretamente
+                    ret, frame = cap.read()
+                else:
+                    # Limpar buffer para câmeras IP
+                    if camera_config.get('type') == 'ip':
+                        # Descartar frames em buffer para garantir que capturamos o mais recente
+                        for _ in range(3):
+                            cap.grab()
+                    
+                    # Capturar frame
+                    ret, frame = cap.read()
+                
+                if not ret or frame is None or frame.size == 0:
+                    logger.error(f"Erro ao capturar frame {i}/{self.motion_capture_frames}")
+                    break
+                
+                # Verificar se o frame está corrompido
+                try:
+                    from linha.utils.camera import _check_frame_corruption
+                    if _check_frame_corruption(frame):
+                        logger.warning(f"Frame corrompido na sequência de movimento, tentando novamente...")
+                        # Tentar mais uma vez após uma pausa
+                        time.sleep(self.motion_capture_interval * 2)
+                        ret, frame = cap.read()
+                        if not ret or frame is None or frame.size == 0:
+                            logger.error(f"Erro ao capturar frame alternativo {i}/{self.motion_capture_frames}")
+                            break
                         
-                        # Verificar se diretório existe e tem imagens
-                        if os.path.exists(batch_path):
-                            images = [f for f in os.listdir(batch_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
-                            if images:
-                                self.db_handler.register_new_batch(line_id, batch_path)
-                                logger.info(f"Lote registrado: {line_id} - {last_registered_minute} - {len(images)} imagens")
+                        if _check_frame_corruption(frame):
+                            logger.error(f"Frame alternativo ainda corrompido, pulando frame {i}")
+                            continue
+                except Exception as e:
+                    logger.error(f"Erro ao verificar corrupção do frame: {str(e)}")
                 
-                last_registered_minute = current_minute
-                time.sleep(1)
+                # Verificar se o frame é diferente do anterior
+                current_hash = hash(frame.tobytes())
+                if current_hash == last_frame_hash:
+                    logger.warning(f"Frame duplicado detectado na sequência de movimento, tentando novamente...")
+                    # Tentar mais uma vez após uma pausa maior
+                    time.sleep(self.motion_capture_interval * 2)
+                    ret, frame = cap.read()
+                    if not ret or frame is None or frame.size == 0:
+                        logger.error(f"Erro ao capturar frame alternativo {i}/{self.motion_capture_frames}")
+                        break
+                    
+                    current_hash = hash(frame.tobytes())
+                    if current_hash == last_frame_hash:
+                        logger.error(f"Frame ainda duplicado, pulando frame {i}")
+                        continue
                 
-            except Exception as e:
-                logger.error(f"Erro no monitor de lotes: {str(e)}")
-                time.sleep(5)
-
-    def stop_capture(self):
-        """Para a captura em todas as câmeras"""
-        self.running = False
-        
-        # Esperar threads terminarem
-        for thread in self.capture_threads:
-            try:
-                thread.join(timeout=5)  # Timeout de 5 segundos
-            except Exception as e:
-                logger.error(f"Erro ao finalizar thread: {str(e)}")
-        
-        # Liberar câmeras
-        for camera_key, camera in self.cameras.items():
-            try:
-                camera['cap'].release()
-            except Exception as e:
-                logger.error(f"Erro ao liberar câmera {camera_key}: {str(e)}")
-        
-        self.cameras.clear()
-        self.capture_threads.clear()
-        logger.info("Captura finalizada")
+                # Atualizar hash do último frame
+                last_frame_hash = current_hash
+                
+                # Salvar frame
+                now = datetime.now()
+                timestamp = now.strftime("%H%M%S_%f")[:-3]  # Milissegundos
+                filename = f"{position}_motion_{movimento_area:.0f}_{timestamp}_{i}.jpg"
+                filepath = os.path.join(current_batch_dir, filename)
+                cv2.imwrite(filepath, frame)
+                
+                # Incrementar contador do lote
+                self._increment_batch_count(line_id)
+                
+                # Atualizar contadores e tempo
+                camera['frames_count'] += 1
+                self.last_capture_times[camera_key] = now.isoformat()
+                
+                logger.info(f"Frame {i}/{self.motion_capture_frames} capturado: {filename}")
+                
+        except Exception as e:
+            logger.error(f"Erro ao capturar sequência de movimento: {str(e)}")
 
     @property
     def is_capturing(self) -> bool:
         """Verifica se o sistema está capturando imagens"""
-        try:
-            # Sistema precisa estar rodando
-            if not self.running:
-                logger.info("Sistema não está rodando (self.running=False)")
-                return False
+        return self.running and len(self.cameras) > 0
+
+    def stop_capture(self):
+        """Para a captura em todas as câmeras"""
+        logger.info("Parando sistema de captura...")
+        self.running = False
+        
+        # Aguardar threads terminarem
+        for camera_key, thread in self.capture_threads.items():
+            if thread.is_alive():
+                thread.join(timeout=2)
+                
+        # Liberar recursos das câmeras
+        for camera_key, camera in list(self.cameras.items()):
+            try:
+                camera['cap'].release()
+            except:
+                pass
             
-            # Verificar se tem câmeras configuradas
-            if not self.cameras:
-                logger.info("Nenhuma câmera configurada (self.cameras vazio)")
-                return False
-            
-            # Log das câmeras ativas
-            logger.info(f"Câmeras configuradas: {list(self.cameras.keys())}")
-            
-            # Verificar se pelo menos uma câmera está ativa
-            active_cameras = False
-            for line_id, cameras in self.production_lines.items():
-                for cam in cameras:
-                    is_active = self.is_camera_active(line_id, cam['id'])
-                    logger.info(f"Status câmera {line_id}_{cam['id']}: {'Ativa' if is_active else 'Inativa'}")
-                    if is_active:
-                        active_cameras = True
-                        break
-                if active_cameras:
-                    break
-            
-            if not active_cameras:
-                logger.info("Nenhuma câmera ativa encontrada")
-                return False
-            
-            # Verificar se está gerando imagens
-            now = datetime.now()
-            current_minute = now.strftime("%Y%m%d_%H%M")
-            dir_path = os.path.join(BASE_IMAGE_DIR, line_id, current_minute)
-            
-            logger.info(f"Verificando diretório: {dir_path}")
-            
-            if not os.path.exists(dir_path):
-                logger.info(f"Diretório não existe: {dir_path}")
-                return False
-            
-            # Verificar se tem imagens recentes
-            files = [f for f in os.listdir(dir_path) if f.endswith('.jpg')]
-            logger.info(f"Total de imagens encontradas: {len(files)}")
-            
-            if not files:
-                logger.info("Nenhuma imagem encontrada")
-                return False
-            
-            latest_file = max(files, key=lambda x: os.path.getmtime(os.path.join(dir_path, x)))
-            latest_time = os.path.getmtime(os.path.join(dir_path, latest_file))
-            time_diff = time.time() - latest_time
-            
-            logger.info(f"Última imagem: {latest_file}")
-            logger.info(f"Tempo desde última imagem: {time_diff:.1f} segundos")
-            
-            return time_diff < 10
-            
-        except Exception as e:
-            logger.error(f"Erro ao verificar status de captura: {str(e)}")
-            return False
+        self.cameras.clear()
+        self.capture_threads.clear()
+        logger.info("Sistema de captura parado")
 
     def is_camera_active(self, line_id: str, camera_id: str) -> bool:
         """Verifica se uma câmera específica está ativa e capturando"""
@@ -420,8 +500,8 @@ class ImageCapture:
                 'is_opened': False,
                 'can_capture': False,
                 'last_image_time': None,
-                'fps': 0,
-                'capture_type': 'interval'
+                'last_motion_time': None,
+                'fps': 0
             }
         
         return {
@@ -431,8 +511,9 @@ class ImageCapture:
             'is_opened': camera['cap'].isOpened(),
             'can_capture': camera['can_capture'],
             'last_image_time': self.last_capture_times.get(camera_id),
+            'last_motion_time': camera['last_motion_time'].isoformat() if camera['last_motion_time'] else None,
             'fps': self.calculate_fps(camera_id),
-            'capture_type': 'interval'
+            'capture_type': 'motion'
         }
 
     def get_status(self):
@@ -443,7 +524,7 @@ class ImageCapture:
                 'system_running': self.running,
                 'cameras_configured': len(self.cameras) > 0,
                 'is_capturing': self.is_capturing,
-                'capture_type': 'interval',
+                'capture_type': 'motion',
                 'cameras': {}
             }
             
@@ -464,26 +545,6 @@ class ImageCapture:
                 'system_running': False,
                 'cameras_configured': False,
                 'is_capturing': False,
-                'capture_type': 'interval',
+                'capture_type': 'motion',
                 'cameras': {}
-            }
-
-    def __getattr__(self, name):
-        """Handler para atributos não encontrados"""
-        if name == 'last_capture_time':
-            import traceback
-            stack = traceback.extract_stack()
-            logger.error("Tentativa de acessar 'last_capture_time' - Stack trace:")
-            for filename, line, func, text in stack[:-1]:  # -1 para excluir esta função
-                logger.error(f"  File {filename}, line {line}, in {func}")
-                logger.error(f"    {text}")
-            
-            # Retornar o primeiro valor de last_capture_times ou None
-            if self.last_capture_times:
-                camera_id = next(iter(self.last_capture_times.keys()))
-                logger.warning(f"Retornando valor de {camera_id}: {self.last_capture_times[camera_id]}")
-                return self.last_capture_times[camera_id]
-            logger.warning("Nenhum valor de last_capture_times disponível")
-            return None
-        
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'") 
+            } 

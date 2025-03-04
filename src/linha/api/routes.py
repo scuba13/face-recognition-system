@@ -14,9 +14,22 @@ from linha.config.settings import (
 from linha.core.capture_factory import CaptureFactory
 import face_recognition
 import io
+import logging
+
+# Configurar logger
+logger = logging.getLogger(__name__)
 
 # Criar o router
 router = APIRouter()
+
+# Tentar importar e incluir router de configurações
+try:
+    from linha.api.settings_routes import router as settings_router
+    router.include_router(settings_router)
+    print("✓ Router de configurações incluído com sucesso")
+except Exception as e:
+    print(f"✗ Erro ao importar router de configurações: {str(e)}")
+    logger.error(f"Erro ao importar router de configurações: {str(e)}")
 
 # Adicionar log para debug
 print("\n=== Configurando Rotas ===")

@@ -111,7 +111,7 @@ MOTION_CAPTURE_FRAMES = int(os.getenv('MOTION_CAPTURE_FRAMES', '5'))  # Número 
 MOTION_CAPTURE_INTERVAL = float(os.getenv('MOTION_CAPTURE_INTERVAL', '0.1'))  # Intervalo entre frames em segundos (100ms)
 
 # Tipo de captura: 'interval' (intervalo fixo) ou 'motion' (baseado em movimento)
-CAPTURE_TYPE = os.getenv('CAPTURE_TYPE', 'motion')
+CAPTURE_TYPE = os.getenv('CAPTURE_TYPE', 'interval')
 
 # Face Detection
 FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU

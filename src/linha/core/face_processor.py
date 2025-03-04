@@ -217,6 +217,11 @@ class FaceProcessor:
         """Para o processamento"""
         self.running = False 
 
+    @property
+    def is_processing(self):
+        """Retorna se o processador está em execução"""
+        return self.running
+
     def get_processor_status(self):
         """Retorna estatísticas do processador"""
         try:

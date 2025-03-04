@@ -11,7 +11,9 @@ from linha.core.capture_factory import CaptureFactory
 from linha.db.handler import MongoDBHandler
 from linha.config.settings import (
     PRODUCTION_LINES,
-    CAPTURE_TYPE
+    CAPTURE_TYPE,
+    ENABLE_CAPTURE,
+    ENABLE_PROCESSING
 )
 from linha.utils.logger import setup_colored_logging
 from linha.core.instance import set_image_capture, set_face_processor, set_db_handler
@@ -60,17 +62,23 @@ def main():
         set_image_capture(image_capture)
         set_face_processor(face_processor)
         
-        # 5. Iniciar captura
-        print("▶ Iniciando captura de imagens...")
-        image_capture.set_db_handler(db_handler)
-        image_capture.start_capture()
-        print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
+        # 5. Iniciar captura (apenas se ENABLE_CAPTURE for True)
+        if ENABLE_CAPTURE:
+            print("▶ Iniciando captura de imagens...")
+            image_capture.set_db_handler(db_handler)
+            image_capture.start_capture()
+            print(f"✓ Captura iniciada com {len(image_capture.cameras)} câmeras")
+        else:
+            print("ℹ Captura de imagens desabilitada por configuração")
         
-        # 6. Inicializar processador de faces por último
-        processor_thread = Thread(target=face_processor.start_processing)
-        processor_thread.daemon = True
-        processor_thread.start()
-        print("✓ Processador de faces iniciado")
+        # 6. Inicializar processador de faces (apenas se ENABLE_PROCESSING for True)
+        if ENABLE_PROCESSING:
+            processor_thread = Thread(target=face_processor.start_processing)
+            processor_thread.daemon = True
+            processor_thread.start()
+            print("✓ Processador de faces iniciado")
+        else:
+            print("ℹ Processamento de faces desabilitado por configuração")
         
         # Loop principal
         while True:
@@ -81,9 +89,9 @@ def main():
     except Exception as e:
         print(f"\n✗ Erro na execução principal: {str(e)}")
     finally:
-        if 'face_processor' in locals():
+        if 'face_processor' in locals() and ENABLE_PROCESSING:
             face_processor.stop_processing()
-        if 'image_capture' in locals():
+        if 'image_capture' in locals() and ENABLE_CAPTURE:
             image_capture.stop_capture()
 
 if __name__ == "__main__":

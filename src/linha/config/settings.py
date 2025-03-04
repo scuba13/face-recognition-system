@@ -121,3 +121,7 @@ ENABLE_PREPROCESSING = bool(os.getenv('ENABLE_PREPROCESSING', 'True'))  # Flag p
 FACE_PROCESSOR_MAX_WORKERS = int(os.getenv('FACE_PROCESSOR_MAX_WORKERS', '4'))  # Número de threads para processamento paralelo de imagens
 CAPTURE_MAX_WORKERS = int(os.getenv('CAPTURE_MAX_WORKERS', '4'))  # Número de workers para processamento de captura
 MOTION_DETECTION_MAX_WORKERS = int(os.getenv('MOTION_DETECTION_MAX_WORKERS', '4'))  # Número de workers para detecção de movimento
+
+# Flags para habilitar/desabilitar componentes do sistema
+ENABLE_CAPTURE = bool(os.getenv('ENABLE_CAPTURE', 'True'))  # Flag para habilitar/desabilitar a captura de imagens
+ENABLE_PROCESSING = bool(os.getenv('ENABLE_PROCESSING', 'True'))  # Flag para habilitar/desabilitar o processamento de faces

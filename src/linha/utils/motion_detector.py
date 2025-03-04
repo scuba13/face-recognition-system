@@ -13,97 +13,98 @@ COR_VERDE = (0, 255, 0)
 COR_VERMELHO = (0, 0, 255)
 
 class MotionDetector:
-    """Classe para detecção de movimento em frames de vídeo"""
+    """
+    Classe para detecção de movimento entre frames.
+    Utiliza técnicas de processamento de imagem para detectar diferenças significativas.
+    """
     
-    def __init__(self, threshold=1000, area_minima=500, desenhar_contornos=True):
+    def __init__(self, threshold=25.0, area_minima=500.0, desenhar_contornos=True):
         """
-        Inicializa o detector de movimento com os parâmetros especificados
+        Inicializa o detector de movimento
         
         Args:
-            threshold: Limiar de área total para considerar movimento
-            area_minima: Área mínima de um contorno para ser considerado movimento
-            desenhar_contornos: Se deve desenhar retângulos nos contornos detectados
+            threshold: Limiar para considerar movimento (quanto menor, mais sensível)
+            area_minima: Área mínima para considerar como movimento válido
+            desenhar_contornos: Se deve desenhar contornos nos frames com movimento
         """
         self.threshold = threshold
         self.area_minima = area_minima
         self.desenhar_contornos = desenhar_contornos
         logger.info(f"Detector de movimento inicializado: threshold={threshold}, area_minima={area_minima}")
     
-    def detectar(self, frame1, frame2):
+    def detectar(self, frame_atual, frame_anterior):
         """
-        Detecta movimento entre dois frames consecutivos
+        Detecta movimento entre dois frames
         
         Args:
-            frame1: Frame atual
-            frame2: Frame anterior
+            frame_atual: Frame atual
+            frame_anterior: Frame anterior para comparação
             
         Returns:
-            tuple: (movimento_detectado, movimento_area, frame_com_marcacoes)
+            Tupla (movimento_detectado, area_movimento, frame_marcado)
         """
-        if frame1 is None or frame2 is None:
-            return False, 0, frame1
+        # Converter para escala de cinza
+        gray_atual = cv2.cvtColor(frame_atual, cv2.COLOR_BGR2GRAY)
+        gray_anterior = cv2.cvtColor(frame_anterior, cv2.COLOR_BGR2GRAY)
+        
+        # Aplicar desfoque gaussiano para reduzir ruído
+        gray_atual = cv2.GaussianBlur(gray_atual, (21, 21), 0)
+        gray_anterior = cv2.GaussianBlur(gray_anterior, (21, 21), 0)
+        
+        # Calcular diferença absoluta entre frames
+        frame_delta = cv2.absdiff(gray_anterior, gray_atual)
+        
+        # Aplicar limiar para destacar diferenças significativas
+        thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+        
+        # Dilatar para preencher buracos
+        thresh = cv2.dilate(thresh, None, iterations=2)
+        
+        # Encontrar contornos
+        contornos, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Criar cópia do frame para desenhar
+        frame_marcado = frame_atual.copy()
+        
+        # Variáveis para controle
+        movimento_detectado = False
+        area_total = 0
+        contornos_validos = 0
+        
+        # Processar contornos encontrados
+        for contorno in contornos:
+            area = cv2.contourArea(contorno)
             
-        try:
-            # Converter para escala de cinza
-            gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-            gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-            
-            # Aplicar blur para reduzir ruído
-            gray1 = cv2.GaussianBlur(gray1, (21, 21), 0)
-            gray2 = cv2.GaussianBlur(gray2, (21, 21), 0)
-            
-            # Calcular diferença absoluta entre os frames
-            frame_diff = cv2.absdiff(gray1, gray2)
-            
-            # Aplicar threshold para destacar áreas com movimento
-            thresh = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)[1]
-            
-            # Dilatar o threshold para preencher buracos
-            thresh = cv2.dilate(thresh, None, iterations=2)
-            
-            # Encontrar contornos
-            contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            movimento_detectado = False
-            movimento_area = 0
-            
-            # Criar uma cópia do frame para desenhar
-            frame_marcado = frame1.copy() if self.desenhar_contornos else frame1
-            
-            # Verificar se há contornos significativos
-            for contour in contours:
-                area = cv2.contourArea(contour)
-                if area > self.area_minima:  # Filtrar contornos pequenos (ruído)
-                    movimento_area += area
-                    
-                    # Desenhar retângulo ao redor do movimento
-                    if self.desenhar_contornos:
-                        (x, y, w, h) = cv2.boundingRect(contour)
-                        cv2.rectangle(frame_marcado, (x, y), (x + w, y + h), COR_VERDE, 2)
-            
-            # Verificar se a área total de movimento é significativa
-            if movimento_area > self.threshold:
-                movimento_detectado = True
+            # Verificar se área é maior que o mínimo
+            if area < self.area_minima:
+                continue
                 
-                # Adicionar texto indicando movimento
-                if self.desenhar_contornos:
-                    cv2.putText(
-                        frame_marcado, 
-                        f"Movimento: {movimento_area:.0f}", 
-                        (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 
-                        1, 
-                        COR_VERMELHO, 
-                        2
-                    )
-                
-                logger.debug(f"Movimento detectado: área={movimento_area:.0f}, threshold={self.threshold}")
+            contornos_validos += 1
+            area_total += area
             
-            return movimento_detectado, movimento_area, frame_marcado
-            
-        except Exception as e:
-            logger.error(f"Erro ao detectar movimento: {str(e)}")
-            return False, 0, frame1
+            # Desenhar contorno se configurado
+            if self.desenhar_contornos:
+                (x, y, w, h) = cv2.boundingRect(contorno)
+                cv2.rectangle(frame_marcado, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(frame_marcado, f"Area: {area:.0f}", (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        # Verificar se área total é maior que o threshold
+        movimento_detectado = area_total > self.threshold
+        
+        # Adicionar informações no frame
+        if self.desenhar_contornos:
+            info_text = f"Movimento: {'SIM' if movimento_detectado else 'NAO'} | Area: {area_total:.0f} | Threshold: {self.threshold}"
+            cv2.putText(frame_marcado, info_text, (10, 20), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        
+        # Logar detalhes da detecção
+        if movimento_detectado:
+            logger.debug(f"Movimento detectado: área={area_total:.0f}, contornos={contornos_validos}, threshold={self.threshold}")
+        elif contornos_validos > 0:
+            logger.debug(f"Movimento abaixo do threshold: área={area_total:.0f}, contornos={contornos_validos}, threshold={self.threshold}")
+        
+        return movimento_detectado, area_total, frame_marcado
     
     def salvar_frame_movimento(self, frame, movimento_area, diretorio="capturas/movimento"):
         """

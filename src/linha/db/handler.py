@@ -160,6 +160,7 @@ class MongoDBHandler:
                 'total_faces_recognized': batch_detection.total_faces_recognized,
                 'total_faces_unknown': batch_detection.total_faces_unknown,
                 'preprocessing_enabled': batch_detection.preprocessing_enabled,
+                'capture_type': batch_detection.capture_type,
                 'detections': batch_detection.detections
             }
             

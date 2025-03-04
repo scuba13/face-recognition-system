@@ -34,11 +34,12 @@ class BatchDetection:
     unique_people_unknown: int
     detections: List[Dict]
     preprocessing_enabled: bool = False
+    capture_type: str = 'interval'
 
     def __init__(self, line_id, batch_path, timestamp, capture_datetime, processed_at,
                  processor_id, total_images, processing_time, total_faces_detected,
                  total_faces_recognized, total_faces_unknown, unique_people_recognized,
-                 unique_people_unknown, detections, preprocessing_enabled=False):
+                 unique_people_unknown, detections, preprocessing_enabled=False, capture_type='interval'):
         self.line_id = line_id
         self.batch_path = batch_path
         self.timestamp = timestamp
@@ -54,6 +55,7 @@ class BatchDetection:
         self.unique_people_unknown = unique_people_unknown
         self.detections = detections
         self.preprocessing_enabled = preprocessing_enabled
+        self.capture_type = capture_type
 
     def to_dict(self) -> Dict:
         return {
@@ -71,5 +73,6 @@ class BatchDetection:
             'unique_people_recognized': self.unique_people_recognized,
             'unique_people_unknown': self.unique_people_unknown,
             'preprocessing_enabled': self.preprocessing_enabled,
+            'capture_type': self.capture_type,
             'detections': self.detections
         } 

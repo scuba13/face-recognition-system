@@ -5,7 +5,13 @@ import numpy as np
 from datetime import datetime
 import time
 from threading import Thread
-from linha.config.settings import FACE_RECOGNITION_TOLERANCE, PRODUCTION_LINES, ENABLE_PREPROCESSING
+from linha.config.settings import (
+    FACE_RECOGNITION_TOLERANCE, 
+    PRODUCTION_LINES, 
+    ENABLE_PREPROCESSING, 
+    CAPTURE_TYPE,
+    FACE_PROCESSOR_MAX_WORKERS
+)
 from linha.db.models import BatchDetection  # Importar o modelo
 import shutil  # Adicionar import
 import cv2  # Adicionar import para cv2
@@ -21,7 +27,8 @@ class FaceProcessor:
         self.db_handler = db_handler
         self.running = True
         self.tolerance = FACE_RECOGNITION_TOLERANCE
-        self.max_workers = 4  # Número de threads para processamento paralelo
+        self.max_workers = FACE_PROCESSOR_MAX_WORKERS  # Usar configuração do settings.py
+        logger.info(f"FaceProcessor inicializado com {self.max_workers} workers para processamento paralelo")
 
     def start_processing(self):
         """Inicia o processamento de lotes"""
@@ -108,8 +115,18 @@ class FaceProcessor:
             detections = {}
             start_time = datetime.now()
             
+            # Determinar o tipo de captura
+            # Verificar se o nome do arquivo contém 'motion' para inferir o tipo de captura
+            capture_type = 'interval'
             image_files = [f for f in os.listdir(batch_path) 
                           if f.endswith(('.jpg', '.jpeg', '.png'))]
+            
+            # Se algum arquivo contém 'motion' no nome, é captura baseada em movimento
+            if any('motion' in f for f in image_files):
+                capture_type = 'motion'
+            else:
+                # Caso contrário, usar o valor configurado
+                capture_type = CAPTURE_TYPE
             
             # Processar imagens em paralelo
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -161,6 +178,7 @@ class FaceProcessor:
                 unique_people_recognized=len([d for d in detections.values() if d['count'] > 0]),
                 unique_people_unknown=total_faces_unknown,
                 preprocessing_enabled=ENABLE_PREPROCESSING,
+                capture_type=capture_type,  # Adicionar o tipo de captura
                 detections=[
                     {
                         'employee_id': emp_id,

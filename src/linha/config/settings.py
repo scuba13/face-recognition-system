@@ -104,7 +104,7 @@ MIN_BLUR_THRESHOLD = float(os.getenv('MIN_BLUR_THRESHOLD', '100'))
 
 # Configurações de detecção de movimento
 MOTION_DETECTION_ENABLED = bool(os.getenv('MOTION_DETECTION_ENABLED', 'True'))
-MOTION_THRESHOLD = float(os.getenv('MOTION_THRESHOLD', '3000'))  # Limiar para detecção de movimento
+MOTION_THRESHOLD = float(os.getenv('MOTION_THRESHOLD', '20000'))  # Limiar para detecção de movimento
 MOTION_MIN_AREA = float(os.getenv('MOTION_MIN_AREA', '500'))  # Área mínima para considerar movimento
 MOTION_DRAW_CONTOURS = bool(os.getenv('MOTION_DRAW_CONTOURS', 'True'))  # Desenhar contornos nos frames
 MOTION_CAPTURE_FRAMES = int(os.getenv('MOTION_CAPTURE_FRAMES', '5'))  # Número de frames a capturar quando detectar movimento
@@ -116,3 +116,6 @@ CAPTURE_TYPE = os.getenv('CAPTURE_TYPE', 'motion')
 # Face Detection
 FACE_DETECTION_MODEL = "hog"  # ou "cnn" para GPU
 ENABLE_PREPROCESSING = bool(os.getenv('ENABLE_PREPROCESSING', 'True'))  # Flag para controlar pré-processamento
+
+# Configurações de processamento paralelo
+FACE_PROCESSOR_MAX_WORKERS = int(os.getenv('FACE_PROCESSOR_MAX_WORKERS', '4'))  # Número de threads para processamento paralelo de imagens

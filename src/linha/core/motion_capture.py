@@ -257,7 +257,18 @@ class MotionCapture:
                             
                             # Se detectou movimento, capturar sequência de frames
                             if movimento_detectado:
-                                logger.info(f"Movimento detectado na câmera {camera_key}: área={movimento_area:.0f}")
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                                position = camera_config.get('position', 'default')
+                                camera_name = camera_config.get('name', 'Desconhecida')
+                                
+                                # Log detalhado de detecção de movimento
+                                logger.info(f"🔍 MOVIMENTO DETECTADO [Timestamp: {timestamp}]")
+                                logger.info(f"  └─ Linha: {line_id}")
+                                logger.info(f"  └─ Câmera: {camera_name} ({position})")
+                                logger.info(f"  └─ Área de movimento: {movimento_area:.0f} pixels²")
+                                logger.info(f"  └─ Threshold configurado: {self.motion_threshold}")
+                                logger.info(f"  └─ Iniciando captura de {self.motion_capture_frames} frames")
+                                
                                 camera['last_motion_time'] = datetime.now()
                                 
                                 # Capturar sequência de frames
@@ -333,7 +344,10 @@ class MotionCapture:
             camera['frames_count'] += 1
             self.last_capture_times[camera_key] = now.isoformat()
             
-            logger.info(f"Frame 1/{self.motion_capture_frames} capturado: {filename}")
+            logger.info(f"📸 Frame 1/{self.motion_capture_frames} capturado e salvo:")
+            logger.info(f"  └─ Arquivo: {filename}")
+            logger.info(f"  └─ Diretório: {current_batch_dir}")
+            logger.info(f"  └─ Tamanho: {os.path.getsize(filepath)} bytes")
             
             # Armazenar hash do último frame para evitar duplicatas
             last_frame_hash = hash(first_frame.tobytes())
@@ -416,7 +430,14 @@ class MotionCapture:
                 camera['frames_count'] += 1
                 self.last_capture_times[camera_key] = now.isoformat()
                 
-                logger.info(f"Frame {i}/{self.motion_capture_frames} capturado: {filename}")
+                logger.info(f"📸 Frame {i}/{self.motion_capture_frames} capturado e salvo:")
+                logger.info(f"  └─ Arquivo: {filename}")
+                logger.info(f"  └─ Tempo desde primeiro frame: {(now - camera['last_motion_time']).total_seconds():.3f}s")
+                
+            # Log de conclusão da sequência
+            logger.info(f"✅ Sequência de captura de movimento concluída para {line_id} - {camera_config.get('name', 'Desconhecida')}")
+            logger.info(f"  └─ Total de frames capturados: {min(self.motion_capture_frames, i)}")
+            logger.info(f"  └─ Lote: {current_batch_dir}")
                 
         except Exception as e:
             logger.error(f"Erro ao capturar sequência de movimento: {str(e)}")

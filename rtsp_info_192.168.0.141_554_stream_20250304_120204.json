@@ -1,0 +1,150 @@
+{
+  "rtsp_url": "rtsp://192.168.0.141:554/stream",
+  "transport": "tcp",
+  "opencv_info": {
+    "width": 2304,
+    "height": 1296,
+    "fps": 11.988011988011989,
+    "codec": 1668703592,
+    "codec_str": "hevc",
+    "backend": "FFMPEG",
+    "auto_focus": 0.0,
+    "focus": 0.0,
+    "timestamp": "2025-03-04T12:02:02.553223",
+    "sample_frame_path": "/var/folders/2w/fw8r_kw55zj2whb09k1snhg80000gn/T/rtsp_frame_20250304_120202.jpg",
+    "frames_captured": true,
+    "frames_info": [
+      {
+        "index": 0,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.481268263103,
+        "std_value": 56.25118263968576,
+        "capture_time": 0.10552406311035156,
+        "histogram_stats": {
+          "min": 1856.0,
+          "max": 68720.0,
+          "mean": 11664.0,
+          "std": 7430.96533203125
+        }
+      },
+      {
+        "index": 1,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.48004521569217,
+        "std_value": 56.24470664128376,
+        "capture_time": 0.16580915451049805,
+        "histogram_stats": {
+          "min": 1850.0,
+          "max": 68515.0,
+          "mean": 11664.0,
+          "std": 7430.23486328125
+        }
+      },
+      {
+        "index": 2,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.48077406532207,
+        "std_value": 56.241791654812765,
+        "capture_time": 0.2080380916595459,
+        "histogram_stats": {
+          "min": 1871.0,
+          "max": 68488.0,
+          "mean": 11664.0,
+          "std": 7427.05078125
+        }
+      },
+      {
+        "index": 3,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.4812411363669,
+        "std_value": 56.24070009155246,
+        "capture_time": 0.25014495849609375,
+        "histogram_stats": {
+          "min": 1874.0,
+          "max": 68473.0,
+          "mean": 11664.0,
+          "std": 7422.23974609375
+        }
+      },
+      {
+        "index": 4,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.47349014596193,
+        "std_value": 56.23870725831283,
+        "capture_time": 0.2919321060180664,
+        "histogram_stats": {
+          "min": 1908.0,
+          "max": 68404.0,
+          "mean": 11664.0,
+          "std": 7412.865234375
+        }
+      }
+    ]
+  },
+  "ffmpeg_info": {
+    "ffmpeg_info": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "hevc",
+          "codec_type": "video",
+          "width": 2304,
+          "height": 1296,
+          "r_frame_rate": "12000/1001",
+          "avg_frame_rate": "0/0"
+        }
+      ],
+      "format": {}
+    },
+    "command": "ffprobe -v error -rtsp_transport tcp -i rtsp://192.168.0.141:554/stream -show_entries stream=width,height,codec_name,codec_type,r_frame_rate,avg_frame_rate -show_entries format=duration,bit_rate,size -of json -timeout 15000000",
+    "timestamp": "2025-03-04T12:02:04.898324"
+  },
+  "timestamp": "2025-03-04T12:02:04.898412",
+  "summary": {
+    "resolution": "2304x1296",
+    "fps": 11.988011988011989,
+    "codec": "hevc",
+    "frames_captured": true,
+    "ffmpeg_resolution": "2304x1296",
+    "ffmpeg_codec": "hevc",
+    "ffmpeg_fps": 11.99,
+    "video_streams": 1,
+    "audio_streams": 0
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "rtsp_url": "rtsp://192.168.0.141:554/0/av0",
+  "transport": "tcp",
+  "opencv_info": {
+    "width": 2304,
+    "height": 1296,
+    "fps": 11.988011988011989,
+    "codec": 1668703592,
+    "codec_str": "hevc",
+    "backend": "FFMPEG",
+    "auto_focus": 0.0,
+    "focus": 0.0,
+    "timestamp": "2025-03-04T12:04:37.199532",
+    "sample_frame_path": "/var/folders/2w/fw8r_kw55zj2whb09k1snhg80000gn/T/rtsp_frame_20250304_120437.jpg",
+    "frames_captured": true,
+    "frames_info": [
+      {
+        "index": 0,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.51072108892748,
+        "std_value": 56.27777060939758,
+        "capture_time": 0.10402584075927734,
+        "histogram_stats": {
+          "min": 1717.0,
+          "max": 67489.0,
+          "mean": 11664.0,
+          "std": 7354.572265625
+        }
+      },
+      {
+        "index": 1,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.51013780828475,
+        "std_value": 56.26847963486121,
+        "capture_time": 0.16298699378967285,
+        "histogram_stats": {
+          "min": 1717.0,
+          "max": 67425.0,
+          "mean": 11664.0,
+          "std": 7354.3046875
+        }
+      },
+      {
+        "index": 2,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.51097594628772,
+        "std_value": 56.25992565393717,
+        "capture_time": 0.20537304878234863,
+        "histogram_stats": {
+          "min": 1709.0,
+          "max": 67321.0,
+          "mean": 11664.0,
+          "std": 7346.7763671875
+        }
+      },
+      {
+        "index": 3,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.515998411244,
+        "std_value": 56.24867235271831,
+        "capture_time": 0.24753594398498535,
+        "histogram_stats": {
+          "min": 1714.0,
+          "max": 67264.0,
+          "mean": 11664.0,
+          "std": 7349.00830078125
+        }
+      },
+      {
+        "index": 4,
+        "shape": [
+          1296,
+          2304,
+          3
+        ],
+        "dtype": "uint8",
+        "min_value": 0.0,
+        "max_value": 255.0,
+        "mean_value": 137.51525739365425,
+        "std_value": 56.24494863322121,
+        "capture_time": 0.2897369861602783,
+        "histogram_stats": {
+          "min": 1708.0,
+          "max": 67232.0,
+          "mean": 11664.0,
+          "std": 7343.4072265625
+        }
+      }
+    ]
+  },
+  "ffmpeg_info": {
+    "ffmpeg_info": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "hevc",
+          "codec_type": "video",
+          "width": 2304,
+          "height": 1296,
+          "r_frame_rate": "12000/1001",
+          "avg_frame_rate": "0/0"
+        },
+        {
+          "codec_name": "pcm_alaw",
+          "codec_type": "audio",
+          "r_frame_rate": "0/0",
+          "avg_frame_rate": "0/0"
+        }
+      ],
+      "format": {}
+    },
+    "command": "ffprobe -v error -rtsp_transport tcp -i rtsp://192.168.0.141:554/0/av0 -show_entries stream=width,height,codec_name,codec_type,r_frame_rate,avg_frame_rate -show_entries format=duration,bit_rate,size -of json -timeout 15000000",
+    "timestamp": "2025-03-04T12:04:39.552767"
+  },
+  "timestamp": "2025-03-04T12:04:39.552860",
+  "summary": {
+    "resolution": "2304x1296",
+    "fps": 11.988011988011989,
+    "codec": "hevc",
+    "frames_captured": true,
+    "ffmpeg_resolution": "2304x1296",
+    "ffmpeg_codec": "hevc",
+    "ffmpeg_fps": 11.99,
+    "video_streams": 1,
+    "audio_streams": 1
+  }
+}

@@ -9,10 +9,15 @@ PRODUCTION_LINES = {
         {
             "type": "ip",
             # "id": "rtsp://192.168.0.141:554/0/av0",
-            # "id": "rtsp://192.168.0.141:554/0/av1", //Preview
+            # "id": "rtsp://192.168.0.141:554/0/av1", # Preview (640x360) - Útil para visualização em tempo real
             "id": "rtsp://192.168.0.141:554/stream", 
             "name": "Câmera IP Principal",
-            "resolution": (1920, 1080),
+            # Usando resolução máxima para melhor detecção e reconhecimento facial
+            # O sistema usa abordagem híbrida:
+            # 1. Captura em alta resolução (2304x1296)
+            # 2. Redimensiona para detecção rápida
+            # 3. Processa faces detectadas em alta resolução
+            "resolution": (2304, 1296),
             "position": "entrada",
             "rtsp_transport": "tcp"  # Protocolo de transporte RTSP (tcp ou udp)
         },

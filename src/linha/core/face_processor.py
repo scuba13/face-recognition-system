@@ -51,39 +51,100 @@ class FaceProcessor:
                 time.sleep(5)
 
     def process_image(self, image_path):
-        """Processa uma única imagem"""
+        """Processa uma única imagem usando abordagem híbrida:
+        1. Carrega imagem em alta resolução
+        2. Redimensiona para detecção rápida
+        3. Detecta faces na imagem redimensionada
+        4. Recorta as faces da imagem original
+        5. Processa as faces em alta resolução
+        """
         try:
-            # Carregar imagem
-            image = cv2.imread(image_path)
-            if image is None:
+            # Carregar imagem original em alta resolução
+            original_image = cv2.imread(image_path)
+            if original_image is None:
+                logger.error(f"Não foi possível carregar a imagem: {image_path}")
                 return None
             
-            # Redimensionar se necessário
-            height, width = image.shape[:2]
-            max_dimension = 800
-            if height > max_dimension or width > max_dimension:
-                scale = max_dimension / max(height, width)
-                image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+            # Guardar dimensões originais
+            original_height, original_width = original_image.shape[:2]
             
-            # Aplicar pré-processamento se habilitado
-            if ENABLE_PREPROCESSING:
-                image = ImagePreprocessor.enhance_image(image)
+            # Criar cópia redimensionada para detecção rápida
+            detection_image = original_image.copy()
+            max_dimension_detection = 800  # Dimensão máxima para detecção
             
-            # Converter para RGB
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            # Redimensionar para detecção rápida
+            if original_height > max_dimension_detection or original_width > max_dimension_detection:
+                scale = max_dimension_detection / max(original_height, original_width)
+                detection_image = cv2.resize(detection_image, (0, 0), fx=scale, fy=scale)
             
-            # Detectar e processar faces
-            face_locations = face_recognition.face_locations(image, model="hog")
+            # Converter para RGB (necessário para face_recognition)
+            detection_image_rgb = cv2.cvtColor(detection_image, cv2.COLOR_BGR2RGB)
+            
+            # Detectar faces na imagem redimensionada
+            face_locations = face_recognition.face_locations(detection_image_rgb, model="hog")
             
             if not face_locations:
                 return None
-                
-            face_encodings = face_recognition.face_encodings(
-                image, 
-                face_locations,
-                num_jitters=1
-            )
             
+            # Converter coordenadas para a imagem original
+            if original_height > max_dimension_detection or original_width > max_dimension_detection:
+                scale_factor = max(original_height, original_width) / max_dimension_detection
+                original_face_locations = []
+                for top, right, bottom, left in face_locations:
+                    # Converter coordenadas para a escala original
+                    orig_top = int(top * scale_factor)
+                    orig_right = int(right * scale_factor)
+                    orig_bottom = int(bottom * scale_factor)
+                    orig_left = int(left * scale_factor)
+                    
+                    # Garantir que as coordenadas estão dentro dos limites da imagem
+                    orig_top = max(0, orig_top)
+                    orig_right = min(original_width, orig_right)
+                    orig_bottom = min(original_height, orig_bottom)
+                    orig_left = max(0, orig_left)
+                    
+                    original_face_locations.append((orig_top, orig_right, orig_bottom, orig_left))
+            else:
+                original_face_locations = face_locations
+            
+            # Converter imagem original para RGB
+            original_image_rgb = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
+            
+            # Processar cada face na resolução original
+            face_encodings = []
+            for face_location in original_face_locations:
+                top, right, bottom, left = face_location
+                
+                # Adicionar margem ao redor da face (20% do tamanho da face)
+                face_height = bottom - top
+                face_width = right - left
+                margin_y = int(face_height * 0.2)
+                margin_x = int(face_width * 0.2)
+                
+                # Garantir que as coordenadas com margem estão dentro dos limites da imagem
+                top_with_margin = max(0, top - margin_y)
+                right_with_margin = min(original_width, right + margin_x)
+                bottom_with_margin = min(original_height, bottom + margin_y)
+                left_with_margin = max(0, left - margin_x)
+                
+                # Recortar a face da imagem original com margem
+                face_image = original_image_rgb[top_with_margin:bottom_with_margin, left_with_margin:right_with_margin]
+                
+                # Aplicar pré-processamento na face recortada se habilitado
+                if ENABLE_PREPROCESSING:
+                    face_image = ImagePreprocessor.enhance_image(face_image)
+                
+                # Calcular encoding da face em alta resolução
+                face_encoding = face_recognition.face_encodings(
+                    face_image, 
+                    [(0, face_image.shape[1], face_image.shape[0], 0)],  # Coordenadas ajustadas para a face recortada
+                    num_jitters=1
+                )
+                
+                if face_encoding:
+                    face_encodings.append(face_encoding[0])
+            
+            # Buscar correspondências no banco de dados
             results = []
             for face_encoding in face_encodings:
                 match = self.db_handler.find_matching_face(
@@ -94,7 +155,7 @@ class FaceProcessor:
                     results.append(match)
             
             # Liberar memória
-            del image
+            del original_image, detection_image, original_image_rgb, detection_image_rgb
             gc.collect()
             
             return results

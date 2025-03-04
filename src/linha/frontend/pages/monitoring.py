@@ -51,8 +51,11 @@ def render_cameras_content(api_client):
         cameras = status.get('cameras', {})
         for camera_id, camera in cameras.items():
             st.markdown("---")
-            line_id = camera_id.split('_usb_')[0]
-            st.subheader(f"Linha: {line_id}")
+            # Extrair o ID da linha do ID da câmera (formato: linha_1_ip_rtsp://...)
+            parts = camera_id.split('_')
+            line_id = parts[0]
+            camera_type = parts[1] if len(parts) > 1 else "desconhecido"
+            st.subheader(f"Linha: {line_id} - Tipo: {camera_type}")
             
             cols = st.columns(4)  # Agora 4 colunas ao invés de 5
             cols[0].markdown("**Câmera**")

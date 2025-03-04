@@ -7,37 +7,81 @@ load_dotenv()
 PRODUCTION_LINES = {
     "linha_1": [
         {
-            "type": "usb",
-            "id": 0,
-            "name": "Webcam Principal",
-            "resolution": (1280, 960),
-            "position": "entrada"
+            "type": "ip",
+            "id": "rtsp://192.168.0.141:554/0/av0",
+            "name": "Câmera IP Principal",
+            "resolution": (1920, 1080),
+            "position": "entrada",
+            "rtsp_transport": "tcp"  # Protocolo de transporte RTSP (tcp ou udp)
         },
         # {
-        #     "type": "usb",
-        #     "id": 1,
-        #     "name": "Webcam Secundária",
+        #     "type": "ip",
+        #     "id": "rtsp://192.168.0.134:554/0/av0",
+        #     "name": "Câmera IP Secundária",
         #     "resolution": (1280, 720),
         #     "position": "saida"
         # }
     ],
     # "linha_2": [
     #     {
-    #         "type": "usb",
-    #         "id": 0,
-    #         "name": "Webcam Principal",
+    #         "type": "ip",
+    #         "id": "rtsp://192.168.0.135:554/0/av0",
+    #         "name": "Câmera IP Principal",
     #         "resolution": (1280, 960),
     #         "position": "entrada"
     #     },
     #     {
-    #         "type": "usb",
-    #         "id": 1,
-    #         "name": "Webcam Secundária",
+    #         "type": "ip",
+    #         "id": "rtsp://192.168.0.136:554/0/av0",
+    #         "name": "Câmera IP Secundária",
     #         "resolution": (1280, 720),
     #         "position": "saida"
     #     }
     # ]
 }
+
+# Configurações alternativas para testes
+# Descomente uma das opções abaixo para testar
+
+# Opção 1: Usar webcam local como teste
+# PRODUCTION_LINES = {
+#     "linha_1": [
+#         {
+#             "type": "usb",
+#             "id": 0,  # ID da webcam (geralmente 0 para a webcam padrão)
+#             "name": "Webcam Local",
+#             "resolution": (1280, 720),
+#             "position": "entrada"
+#         }
+#     ]
+# }
+
+# Opção 2: Usar arquivo de vídeo local para testes
+# PRODUCTION_LINES = {
+#     "linha_1": [
+#         {
+#             "type": "video",
+#             "id": "samples/test_video.mp4",  # Caminho para um arquivo de vídeo
+#             "name": "Vídeo de Teste",
+#             "resolution": (1280, 720),
+#             "position": "entrada"
+#         }
+#     ]
+# }
+
+# Opção 3: Usar stream RTSP público para testes
+# PRODUCTION_LINES = {
+#     "linha_1": [
+#         {
+#             "type": "ip",
+#             "id": "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mp4",  # Stream RTSP público
+#             "name": "Stream RTSP Público",
+#             "resolution": (1280, 720),
+#             "position": "entrada",
+#             "rtsp_transport": "tcp"
+#         }
+#     ]
+# }
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

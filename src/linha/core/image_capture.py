@@ -39,7 +39,7 @@ class ImageCapture:
         # Inicializar todas as câmeras primeiro
         for line_id, cameras in self.production_lines.items():
             for camera_config in cameras:
-                camera_key = f"{line_id}_usb_{camera_config['id']}"
+                camera_key = f"{line_id}_{camera_config['type']}_{camera_config['id']}"
                 logger.info(f"Tentando inicializar câmera: {camera_key}")
                 
                 # Inicializar câmera apenas se não existir
@@ -147,6 +147,13 @@ class ImageCapture:
                     
                     # Capturar frame
                     ret, frame = camera['cap'].read()
+                    
+                    # Para arquivos de vídeo, reiniciar quando chegar ao fim
+                    if not ret and camera_config.get('type') == 'video':
+                        logger.info(f"Fim do vídeo {camera_key}, reiniciando...")
+                        camera['cap'].set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = camera['cap'].read()
+                    
                     if not ret:
                         logger.error(f"Erro ao capturar frame da câmera {camera_key}")
                         camera['can_capture'] = False
@@ -302,7 +309,7 @@ class ImageCapture:
     def is_camera_active(self, line_id: str, camera_id: str) -> bool:
         """Verifica se uma câmera específica está ativa e capturando"""
         try:
-            camera_key = f"{line_id}_usb_{camera_id}"
+            camera_key = f"{line_id}_ip_{camera_id}"
             logger.info(f"\nVerificando câmera {camera_key}:")
             
             if camera_key not in self.cameras:
@@ -379,7 +386,7 @@ class ImageCapture:
             # Status por câmera no formato esperado
             for line_id, cameras in self.production_lines.items():
                 for cam in cameras:
-                    camera_id = f"{line_id}_usb_{cam['id']}"
+                    camera_id = f"{line_id}_{cam['type']}_{cam['id']}"
                     logger.debug(f"Obtendo status da câmera {camera_id}")
                     status['cameras'][camera_id] = self.get_camera_status(camera_id)
             

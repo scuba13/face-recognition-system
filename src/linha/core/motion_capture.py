@@ -9,6 +9,7 @@ import logging
 from threading import Thread, Lock
 import numpy as np
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 from linha.config.settings import (
     BASE_IMAGE_DIR,
@@ -17,7 +18,9 @@ from linha.config.settings import (
     MOTION_MIN_AREA,
     MOTION_DRAW_CONTOURS,
     MOTION_CAPTURE_FRAMES,
-    MOTION_CAPTURE_INTERVAL
+    MOTION_CAPTURE_INTERVAL,
+    MOTION_DETECTION_MAX_WORKERS,
+    CAPTURE_MAX_WORKERS
 )
 from linha.utils.camera import setup_camera
 from linha.utils.validators import check_image_quality
@@ -56,9 +59,14 @@ class MotionCapture:
             desenhar_contornos=self.motion_draw_contours
         )
         
+        # Inicializar pools de workers
+        self.motion_detection_executor = ThreadPoolExecutor(max_workers=MOTION_DETECTION_MAX_WORKERS)
+        self.capture_executor = ThreadPoolExecutor(max_workers=CAPTURE_MAX_WORKERS)
+        
         logger.info(f"MotionCapture inicializado: threshold={self.motion_threshold}, "
                    f"min_area={self.motion_min_area}, frames={self.motion_capture_frames}, "
                    f"interval={self.motion_capture_interval}s")
+        logger.info(f"Workers configurados: detecção={MOTION_DETECTION_MAX_WORKERS}, captura={CAPTURE_MAX_WORKERS}")
 
     def set_db_handler(self, db_handler):
         """Define o manipulador de banco de dados"""
@@ -250,29 +258,17 @@ class MotionCapture:
                             frame_atual = camera['motion_frames_buffer'][-1]
                             frame_anterior = camera['motion_frames_buffer'][-2]
                             
-                            # Detectar movimento
-                            movimento_detectado, movimento_area, frame_marcado = self.motion_detector.detectar(
-                                frame_atual, frame_anterior
+                            # Submeter detecção de movimento para o pool de workers
+                            future = self.motion_detection_executor.submit(
+                                self._detect_motion_worker,
+                                frame_atual.copy(),
+                                frame_anterior.copy(),
+                                camera_key,
+                                line_id,
+                                camera_config
                             )
                             
-                            # Se detectou movimento, capturar sequência de frames
-                            if movimento_detectado:
-                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                                position = camera_config.get('position', 'default')
-                                camera_name = camera_config.get('name', 'Desconhecida')
-                                
-                                # Log detalhado de detecção de movimento
-                                logger.info(f"🔍 MOVIMENTO DETECTADO [Timestamp: {timestamp}]")
-                                logger.info(f"  └─ Linha: {line_id}")
-                                logger.info(f"  └─ Câmera: {camera_name} ({position})")
-                                logger.info(f"  └─ Área de movimento: {movimento_area:.0f} pixels²")
-                                logger.info(f"  └─ Threshold configurado: {self.motion_threshold}")
-                                logger.info(f"  └─ Iniciando captura de {self.motion_capture_frames} frames")
-                                
-                                camera['last_motion_time'] = datetime.now()
-                                
-                                # Capturar sequência de frames
-                                self._capture_motion_sequence(camera_key, line_id, camera_config, frame_marcado, movimento_area)
+                            # Não precisamos esperar o resultado aqui, o worker vai lidar com isso
                         
                         # Atualizar tempo da última verificação
                         last_check_time = current_time
@@ -298,6 +294,47 @@ class MotionCapture:
                 except:
                     pass
                 del self.cameras[camera_key]
+
+    def _detect_motion_worker(self, frame_atual, frame_anterior, camera_key, line_id, camera_config):
+        """Worker para detecção de movimento em um thread separado"""
+        try:
+            # Obter câmera
+            camera = self.cameras.get(camera_key)
+            if not camera:
+                return
+            
+            # Detectar movimento
+            movimento_detectado, movimento_area, frame_marcado = self.motion_detector.detectar(
+                frame_atual, frame_anterior
+            )
+            
+            # Se detectou movimento, capturar sequência de frames
+            if movimento_detectado:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                position = camera_config.get('position', 'default')
+                camera_name = camera_config.get('name', 'Desconhecida')
+                
+                # Log detalhado de detecção de movimento
+                logger.info(f"🔍 MOVIMENTO DETECTADO [Timestamp: {timestamp}]")
+                logger.info(f"  └─ Linha: {line_id}")
+                logger.info(f"  └─ Câmera: {camera_name} ({position})")
+                logger.info(f"  └─ Área de movimento: {movimento_area:.0f} pixels²")
+                logger.info(f"  └─ Threshold configurado: {self.motion_threshold}")
+                logger.info(f"  └─ Iniciando captura de {self.motion_capture_frames} frames")
+                
+                camera['last_motion_time'] = datetime.now()
+                
+                # Submeter captura de sequência para o pool de workers de captura
+                self.capture_executor.submit(
+                    self._capture_motion_sequence,
+                    camera_key,
+                    line_id,
+                    camera_config,
+                    frame_marcado,
+                    movimento_area
+                )
+        except Exception as e:
+            logger.error(f"Erro no worker de detecção de movimento: {str(e)}")
 
     def _capture_motion_sequence(self, camera_key, line_id, camera_config, first_frame, movimento_area):
         """
@@ -463,6 +500,10 @@ class MotionCapture:
                 camera['cap'].release()
             except:
                 pass
+            
+        # Encerrar pools de workers
+        self.motion_detection_executor.shutdown(wait=False)
+        self.capture_executor.shutdown(wait=False)
             
         self.cameras.clear()
         self.capture_threads.clear()

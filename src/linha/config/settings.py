@@ -130,5 +130,5 @@ CAPTURE_MAX_WORKERS = int(os.getenv('CAPTURE_MAX_WORKERS', '4'))  # Número de w
 MOTION_DETECTION_MAX_WORKERS = int(os.getenv('MOTION_DETECTION_MAX_WORKERS', '4'))  # Número de workers para detecção de movimento
 
 # Flags para habilitar/desabilitar componentes do sistema
-ENABLE_CAPTURE = bool(os.getenv('ENABLE_CAPTURE', 'True'))  # Flag para habilitar/desabilitar a captura de imagens
-ENABLE_PROCESSING = bool(os.getenv('ENABLE_PROCESSING', 'True'))  # Flag para habilitar/desabilitar o processamento de faces
+ENABLE_CAPTURE = bool(os.getenv('ENABLE_CAPTURE', 'False'))  # Flag para habilitar/desabilitar a captura de imagens
+ENABLE_PROCESSING = bool(os.getenv('ENABLE_PROCESSING', 'False'))  # Flag para habilitar/desabilitar o processamento de faces

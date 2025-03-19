@@ -1,0 +1,78 @@
+{
+    "device_info": {
+        "fabricante": "ANJIA",
+        "modelo": "AJL33PC0862",
+        "versao_firmware": "v220916.1944",
+        "hardware_id": "AJ-QJ-FH8626V100",
+        "serial": "C0324UT7HTCKD"
+    },
+    "network_info": {
+        "interfaces": [
+            {
+                "nome": "wlan0",
+                "mac": "N/A",
+                "habilitado": "Sim",
+                "dhcp": "Sim",
+                "ip": "192.168.0.130",
+                "mascara": 24
+            }
+        ]
+    },
+    "video_profiles": [
+        {
+            "perfil": "PROFILE_000",
+            "resolucao": "1920x1080",
+            "fps": 16,
+            "rtsp": "rtsp://192.168.0.130:8554/profile0"
+        },
+        {
+            "perfil": "PROFILE_001",
+            "resolucao": "640x360",
+            "fps": 16,
+            "rtsp": "rtsp://192.168.0.130:8554/profile1"
+        },
+        {
+            "perfil": "PROFILE_002",
+            "resolucao": "640x360",
+            "fps": 5,
+            "rtsp": "rtsp://192.168.0.130:8554/profile2"
+        }
+    ],
+    "rtsp_urls": {
+        "profile0": "Sucesso",
+        "profile1": "Sucesso",
+        "profile2": "Sucesso"
+    },
+    "onvif_services": {
+        "device": "Disponível",
+        "media": "Disponível",
+        "ptz": "Disponível",
+        "imaging": "Disponível",
+        "events": "Disponível"
+    },
+    "ptz_status": "Suporta movimento absoluto",
+    "eventos": {
+        "capacidades": {
+            "WSSubscriptionPolicySupport": true,
+            "WSPullPointSupport": true,
+            "WSPausableSubscriptionManagerInterfaceSupport": false,
+            "MaxNotificationProducers": 10,
+            "MaxPullPoints": 10
+        },
+        "topicos": [],
+        "pullpoint_test": "Sucesso"
+    },
+    "mac_addresses": {
+        "onvif_detalhado": "88:b5:ff:7e:1a:6c",
+        "arp": "88:b5:ff:7e:1a:6c"
+    },
+    "http_status": 200,
+    "https_status": 200,
+    "ptz_presets": [
+        {
+            "nome": "Home",
+            "token": "1"
+        }
+    ],
+    "mac_address_confirmado": "88:b5:ff:7e:1a:6c"
+}

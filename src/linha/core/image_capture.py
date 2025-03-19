@@ -378,15 +378,26 @@ class ImageCapture:
                 return False
             
             camera = self.cameras[camera_key]
+            cap = camera['cap']
             
-            # Verificar se câmera está aberta
-            is_opened = camera['cap'].isOpened()
-            logger.info(f"Câmera aberta: {is_opened}")
+            # Verificar se é uma câmera assíncrona
+            is_async_camera = hasattr(cap, 'read') and hasattr(cap, 'stop') and hasattr(cap, 'get_fps')
+            
+            # Verificar se câmera está aberta - método diferente para câmeras assíncronas
+            if is_async_camera:
+                # Para câmeras assíncronas, consideramos que está aberta se tem os métodos necessários
+                is_opened = True
+                logger.info(f"Câmera assíncrona verificada (sem método isOpened)")
+            else:
+                # Para câmeras normais, usar isOpened()
+                is_opened = cap.isOpened()
+                logger.info(f"Câmera aberta: {is_opened}")
+                
             if not is_opened:
                 return False
             
             # Tentar capturar um frame
-            ret, _ = camera['cap'].read()
+            ret, _ = cap.read()
             logger.info(f"Captura de frame: {'Sucesso' if ret else 'Falha'}")
             
             return ret and camera['can_capture']
@@ -424,11 +435,23 @@ class ImageCapture:
                 'capture_type': 'interval'
             }
         
+        # Verificar se é uma câmera assíncrona
+        cap = camera['cap']
+        is_async_camera = hasattr(cap, 'read') and hasattr(cap, 'stop') and hasattr(cap, 'get_fps')
+        
+        # Determinar se a câmera está aberta
+        if is_async_camera:
+            # Para câmeras assíncronas, consideramos que está aberta se tem os métodos necessários
+            is_opened = True
+        else:
+            # Para câmeras normais, usar isOpened()
+            is_opened = cap.isOpened()
+        
         return {
             'name': camera['name'],
             'position': camera.get('position', 'unknown'),
             'is_configured': camera['is_configured'],
-            'is_opened': camera['cap'].isOpened(),
+            'is_opened': is_opened,
             'can_capture': camera['can_capture'],
             'last_image_time': self.last_capture_times.get(camera_id),
             'fps': self.calculate_fps(camera_id),
